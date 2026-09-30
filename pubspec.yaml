@@ -1,0 +1,63 @@
+name: keepit
+description: "KeepIt — keep track of what you own, what you bought, and what you need to do."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Local database (offline-first)
+  # Note: sqlite3 ^3.x bundles native SQLite libraries for Android/iOS via
+  # native assets — no separate sqlite3_flutter_libs package needed.
+  drift: ^2.30.0
+  path_provider: ^2.1.0
+  # Pin path_provider_android to 2.2.x to avoid the JNI-based 2.3.x which
+  # requires NDK native compilation (unavailable in this sandbox).
+  path_provider_android: '>=2.2.5 <2.3.0'
+  path: ^1.9.0
+
+  # Utilities
+  intl: ^0.20.0
+  uuid: ^4.5.0
+
+  # Navigation
+  go_router: ^16.0.0
+  image_picker: ^1.2.3
+  google_mlkit_text_recognition: ^0.16.0
+  file_picker: ^13.1.0
+  permission_handler: ^12.0.1
+
+  # Local notifications (all scheduled on-device, no server)
+  flutter_local_notifications: ^22.3.1
+  timezone: ^0.11.0
+  flutter_timezone: ^5.1.0
+
+  # Backup ZIP creation (pure Dart, no native code)
+  archive: ^4.0.0
+  # SHA-256 PIN hashing (pure Dart)
+  crypto: ^3.0.6
+  # App version display
+  package_info_plus: ^10.2.1
+
+  # Secure storage for the app-lock PIN hash
+  # (Keychain on iOS, Keystore on Android). Pinned to v10: v11 raises the
+  # Android compileSdk requirement to 37, but this project builds with 36.
+  flutter_secure_storage: ^10.0.0
+  # Optional biometric unlock. PIN always works without it; if this plugin
+  # ever breaks the build, it can be dropped and the toggle hidden.
+  local_auth: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.30.0
+  build_runner: ^2.4.0
+
+flutter:
+  uses-material-design: true
