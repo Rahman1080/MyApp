@@ -21,6 +21,7 @@ class DocumentsSection extends StatefulWidget {
     this.purchaseId,
     this.belongingId,
     required this.documentService,
+    this.onDocumentAttached,
   }) : assert(purchaseId != null || belongingId != null,
             'One of purchaseId or belongingId is required.'),
        assert(purchaseId == null || belongingId == null,
@@ -29,6 +30,10 @@ class DocumentsSection extends StatefulWidget {
   final String? purchaseId;
   final String? belongingId;
   final DocumentService documentService;
+
+  /// Called after a document was successfully attached (Phase 9: the item
+  /// detail screen logs a history entry).
+  final Future<void> Function()? onDocumentAttached;
 
   @override
   State<DocumentsSection> createState() => _DocumentsSectionState();
@@ -74,6 +79,7 @@ class _DocumentsSectionState extends State<DocumentsSection> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Document attached.')),
         );
+        await widget.onDocumentAttached?.call();
       }
     } catch (_) {
       if (mounted) {

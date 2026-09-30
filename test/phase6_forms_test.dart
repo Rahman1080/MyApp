@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:keepit/core/database/database_provider.dart';
 import 'package:keepit/core/database/keepit_database.dart';
+import 'package:keepit/core/database/repositories/belonging_history_repository.dart';
 import 'package:keepit/core/database/repositories/belonging_repository.dart';
 import 'package:keepit/core/database/repositories/category_repository.dart';
 import 'package:keepit/core/database/repositories/location_repository.dart';
+import 'package:keepit/core/database/repositories/place_repository.dart';
+import 'package:keepit/core/database/repositories/purchase_repository.dart';
+import 'package:keepit/core/database/repositories/tag_repository.dart';
 import 'package:keepit/features/belongings/presentation/belonging_form_screen.dart';
 import 'package:keepit/features/locations/presentation/location_form_screen.dart';
 import 'package:keepit/shared/services/location_service.dart';
@@ -17,14 +21,22 @@ void main() {
   late KeepItDatabase db;
   late BelongingRepository belongings;
   late LocationRepository locations;
+  late PlaceRepository places;
   late CategoryRepository categories;
+  late PurchaseRepository purchases;
+  late TagRepository tags;
+  late BelongingHistoryRepository history;
   late LocationService locationService;
 
   setUp(() {
     db = openInMemoryDatabase();
     belongings = BelongingRepository(db);
     locations = LocationRepository(db);
+    places = PlaceRepository(db);
     categories = CategoryRepository(db);
+    purchases = PurchaseRepository(db);
+    tags = TagRepository(db);
+    history = BelongingHistoryRepository(db);
     locationService = LocationService(db);
   });
 
@@ -51,6 +63,9 @@ void main() {
           belongingRepository: belongings,
           categoryRepository: categories,
           locationRepository: locations,
+          purchaseRepository: purchases,
+          tagRepository: tags,
+          historyRepository: history,
           belongingId: belongingId,
           onSaved: onSaved ?? () {},
         ),
@@ -99,6 +114,15 @@ void main() {
 
       await tester.enterText(
           find.byKey(const Key('belonging-name')), 'Camera');
+      // The value field sits below the fold in the lengthened Phase 9 form,
+      // and ListView builds sliver children lazily. Unfocus first: a focused
+      // field pins the scroll position, then jump to the end.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      final scrollState =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      scrollState.position.jumpTo(scrollState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
       await tester.enterText(
           find.byKey(const Key('belonging-value')), '249.99');
       await tester.pump();
@@ -124,6 +148,12 @@ void main() {
 
       await tester.enterText(
           find.byKey(const Key('belonging-name')), 'Lamp');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      final scrollState =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      scrollState.position.jumpTo(scrollState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('belonging-value')), 'abc');
       await tester.pump();
 
@@ -144,6 +174,7 @@ void main() {
         home: LocationFormScreen(
           locationRepository: locations,
           locationService: locationService,
+          placeRepository: places,
           locationId: locationId,
           onSaved: () {},
         ),
