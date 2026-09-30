@@ -51,6 +51,8 @@ dependencies:
   # Optional biometric unlock. PIN always works without it; if this plugin
   # ever breaks the build, it can be dropped and the toggle hidden.
   local_auth: ^3.0.0
+  pdf: ^3.12.0
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

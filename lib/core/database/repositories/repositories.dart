@@ -1,9 +1,14 @@
+export 'belonging_history_repository.dart';
+export 'belonging_photo_repository.dart';
 export 'belonging_repository.dart';
 export 'category_repository.dart';
 export 'deadline_repository.dart';
 export 'document_repository.dart';
 export 'exceptions.dart';
 export 'location_repository.dart';
+export 'move_item_repository.dart';
+export 'move_repository.dart';
+export 'place_repository.dart';
 export 'product_repository.dart';
 export 'purchase_repository.dart';
 export 'receipt_repository.dart';
