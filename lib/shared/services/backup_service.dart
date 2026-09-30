@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/database/keepit_database.dart';
+import '../../core/database/tables.dart' show defaultPlaceId;
 
 /// Thrown when a backup file is missing, corrupt, or in an unsupported
 /// format. The [message] is safe to show to the user.
@@ -73,12 +74,24 @@ class _TableCodec {
     required this.dump,
     required this.restoreRows,
     required this.wipe,
+    this.optional = false,
+    this.patchRow,
   });
 
   final String name;
   final Future<List<Map<String, dynamic>>> Function() dump;
   final Future<void> Function(List<Map<String, dynamic>> rows) restoreRows;
   final Future<void> Function() wipe;
+
+  /// When true, a backup missing this table's file still restores (as empty)
+  /// instead of failing. Used for tables added after the backup format was
+  /// introduced, so older backups stay restorable.
+  final bool optional;
+
+  /// Fixes up a raw JSON row before [DataClass].fromJson runs. Used to fill
+  /// in columns that did not exist when a legacy backup was written (e.g.
+  /// `placeId` on locations, `isContainer` on belongings).
+  final Map<String, dynamic> Function(Map<String, dynamic> row)? patchRow;
 }
 
 /// Creates versioned ZIP backups of the whole local database plus the
@@ -143,12 +156,49 @@ class BackupService {
           (row) => _db.into(_db.tags).insert(row),
           () => _db.delete(_db.tags).go(),
         ),
+        // Places (Phase 10) come before locations: restores run
+        // parents-first so foreign keys are satisfied. Optional so legacy
+        // backups without a places file still restore.
+        _TableCodec(
+          name: 'places',
+          dump: () async =>
+              (await _db.select(_db.places).get())
+                  .map((row) => row.toJson())
+                  .toList(),
+          restoreRows: (rows) async {
+            for (final json in rows) {
+              await _db.into(_db.places).insert(Place.fromJson(json));
+            }
+            // Legacy backups have no places file, yet their (patched)
+            // locations point at the default place — and the place FK is
+            // RESTRICT, so the row must exist before locations restore.
+            final existing = await (_db.select(_db.places)
+                  ..where((t) => t.id.equals(defaultPlaceId)))
+                .getSingleOrNull();
+            if (existing == null) {
+              await _db.into(_db.places).insert(
+                    PlacesCompanion.insert(
+                      id: const Value(defaultPlaceId),
+                      name: 'My Home',
+                    ),
+                  );
+            }
+          },
+          wipe: () => _db.delete(_db.places).go(),
+          optional: true,
+        ),
         _codec<Location>(
           'locations',
           () => _db.select(_db.locations).get(),
           Location.fromJson,
           (row) => _db.into(_db.locations).insert(row),
           () => _db.delete(_db.locations).go(),
+          // Legacy backups predate places: point their locations at the
+          // default place (created by the places codec below).
+          patchRow: (row) {
+            row.putIfAbsent('placeId', () => defaultPlaceId);
+            return row;
+          },
         ),
         _codec<Purchase>(
           'purchases',
@@ -205,6 +255,28 @@ class BackupService {
           Belonging.fromJson,
           (row) => _db.into(_db.belongings).insert(row),
           () => _db.delete(_db.belongings).go(),
+          // Legacy backups predate container mode: nothing was a
+          // container and nothing sat inside one.
+          patchRow: (row) {
+            row.putIfAbsent('isContainer', () => false);
+            return row;
+          },
+        ),
+        _codec<BelongingPhoto>(
+          'belonging_photos',
+          () => _db.select(_db.belongingPhotos).get(),
+          BelongingPhoto.fromJson,
+          (row) => _db.into(_db.belongingPhotos).insert(row),
+          () => _db.delete(_db.belongingPhotos).go(),
+          optional: true,
+        ),
+        _codec<BelongingHistoryData>(
+          'belonging_history',
+          () => _db.select(_db.belongingHistory).get(),
+          BelongingHistoryData.fromJson,
+          (row) => _db.into(_db.belongingHistory).insert(row),
+          () => _db.delete(_db.belongingHistory).go(),
+          optional: true,
         ),
         _codec<Document>(
           'documents',
@@ -227,6 +299,25 @@ class BackupService {
           (row) => _db.into(_db.tagLinks).insert(row),
           () => _db.delete(_db.tagLinks).go(),
         ),
+        // Moves (Phase 12) come before move_items: restores run
+        // parents-first so foreign keys are satisfied. Optional so legacy
+        // backups without moves still restore.
+        _codec<Move>(
+          'moves',
+          () => _db.select(_db.moves).get(),
+          Move.fromJson,
+          (row) => _db.into(_db.moves).insert(row),
+          () => _db.delete(_db.moves).go(),
+          optional: true,
+        ),
+        _codec<MoveItem>(
+          'move_items',
+          () => _db.select(_db.moveItems).get(),
+          MoveItem.fromJson,
+          (row) => _db.into(_db.moveItems).insert(row),
+          () => _db.delete(_db.moveItems).go(),
+          optional: true,
+        ),
       ];
 
   _TableCodec _codec<T extends DataClass>(
@@ -234,18 +325,22 @@ class BackupService {
     Future<List<T>> Function() selectAll,
     T Function(Map<String, dynamic>) fromJson,
     Future<void> Function(T row) insert,
-    Future<void> Function() wipe,
-  ) {
+    Future<void> Function() wipe, {
+    bool optional = false,
+    Map<String, dynamic> Function(Map<String, dynamic> row)? patchRow,
+  }) {
     return _TableCodec(
       name: name,
       dump: () async =>
           (await selectAll()).map((row) => row.toJson()).toList(),
       restoreRows: (rows) async {
         for (final json in rows) {
-          await insert(fromJson(json));
+          await insert(fromJson(patchRow == null ? json : patchRow(json)));
         }
       },
       wipe: wipe,
+      optional: optional,
+      patchRow: patchRow,
     );
   }
 
@@ -359,6 +454,11 @@ class BackupService {
     for (final codec in codecs) {
       final file = _findEntry(archive, 'tables/${codec.name}.json');
       if (file == null) {
+        if (codec.optional) {
+          // Table added after this backup was written: restore as empty.
+          parsed[codec] = [];
+          continue;
+        }
         throw BackupException(
           'This backup is incomplete: tables/${codec.name}.json is missing.',
         );

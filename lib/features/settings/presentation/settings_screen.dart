@@ -9,6 +9,12 @@ import 'package:path/path.dart' as p;
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/security/pin_lock_service.dart';
 import '../../settings/data/settings_repository.dart';
+import '../../reports/presentation/reports_screen.dart';
+import '../../moves/presentation/moves_screen.dart';
+import '../../ask/presentation/ask_screen.dart';
+import '../../organize/presentation/organize_screen.dart';
+import '../../household/presentation/household_dashboard_screen.dart';
+import '../../sync/presentation/sync_screen.dart';
 import 'privacy_policy_screen.dart';
 import '../../../shared/services/backup_service.dart';
 
@@ -443,6 +449,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             leading: const Icon(Icons.backup_outlined),
             onTap: _createBackup,
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Inventory reports'),
+            subtitle: const Text(
+              'PDF reports and evidence exports of your belongings.',
+            ),
+            leading: const Icon(Icons.summarize_outlined),
+            onTap: () => context.push(ReportsScreen.routePath),
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Moving Mode'),
+            subtitle: const Text(
+              'Track packing, transit, and unpacking for a move.',
+            ),
+            leading: const Icon(Icons.local_shipping_outlined),
+            onTap: () => context.push(MovesScreen.routePath),
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Ask KEEPIT'),
+            subtitle: const Text(
+              'Ask about your stuff in plain language.',
+            ),
+            leading: const Icon(Icons.chat_bubble_outline),
+            onTap: () => context.push(AskScreen.routePath),
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Smart Organization'),
+            subtitle: const Text(
+              'Review suggestions to tidy up your inventory.',
+            ),
+            leading: const Icon(Icons.auto_awesome_outlined),
+            onTap: () => context.push(OrganizeScreen.routePath),
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Household Command Center'),
+            subtitle: const Text(
+              'Dashboard of members, privacy, and locations.',
+            ),
+            leading: const Icon(Icons.dashboard_outlined),
+            onTap: () =>
+                context.push(HouseholdDashboardScreen.routePath),
+            enabled: !_busy,
+          ),
+          ListTile(
+            title: const Text('Sync with another device'),
+            subtitle: const Text(
+              'Export or import sync files manually.',
+            ),
+            leading: const Icon(Icons.sync_outlined),
+            onTap: () => context.push(SyncScreen.routePath),
             enabled: !_busy,
           ),
           ListTile(
