@@ -2,16 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/keepit_database.dart';
+import '../../core/database/repositories/belonging_history_repository.dart';
+import '../../core/database/repositories/belonging_photo_repository.dart';
 import '../../core/database/repositories/belonging_repository.dart';
 import '../../core/database/repositories/category_repository.dart';
 import '../../core/database/repositories/deadline_repository.dart';
 import '../../core/database/repositories/document_repository.dart';
 import '../../core/database/repositories/location_repository.dart';
+import '../../core/database/repositories/move_item_repository.dart';
+import '../../core/database/repositories/move_repository.dart';
+import '../../core/database/repositories/place_repository.dart';
 import '../../core/database/repositories/product_repository.dart';
 import '../../core/database/repositories/purchase_repository.dart';
+import '../../core/database/repositories/receipt_repository.dart';
 import '../../core/database/repositories/refund_repository.dart';
 import '../../core/database/repositories/reminder_repository.dart';
 import '../../core/database/repositories/return_deadline_repository.dart';
+import '../../core/database/repositories/tag_repository.dart';
 import '../../core/database/repositories/warranty_repository.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_coordinator.dart';
@@ -19,6 +26,16 @@ import '../../core/security/pin_lock_service.dart';
 import '../../features/belongings/presentation/belonging_detail_screen.dart';
 import '../../features/belongings/presentation/belonging_form_screen.dart';
 import '../../features/belongings/presentation/belongings_screen.dart';
+import '../../features/belongings/presentation/lifetime_record_screen.dart';
+import '../../features/belongings/domain/item_lifetime_service.dart';
+import '../../features/belongings/domain/lifecycle_service.dart';
+import '../../features/ask/domain/ask_service.dart';
+import '../../features/ask/presentation/ask_screen.dart';
+import '../../features/household/domain/household_dashboard_service.dart';
+import '../../features/household/presentation/household_dashboard_screen.dart';
+import '../../features/organize/domain/smart_organization_service.dart';
+import '../../features/organize/presentation/organize_screen.dart';
+import '../../features/sync/presentation/sync_screen.dart';
 import '../../features/deadlines/presentation/deadline_detail_screen.dart';
 import '../../features/deadlines/presentation/deadline_form_screen.dart';
 import '../../features/deadlines/presentation/deadlines_screen.dart';
@@ -30,6 +47,13 @@ import '../../features/purchases/presentation/purchase_detail_screen.dart';
 import '../../features/purchases/presentation/purchase_form_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
 import '../../features/receipts/presentation/receipt_scan_screen.dart';
+import '../../features/reports/domain/evidence_export_service.dart';
+import '../../features/reports/domain/pdf_report_builder.dart';
+import '../../features/reports/domain/report_service.dart';
+import '../../features/reports/presentation/reports_screen.dart';
+import '../../features/moves/domain/move_service.dart';
+import '../../features/moves/presentation/move_detail_screen.dart';
+import '../../features/moves/presentation/moves_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/settings/data/settings_repository.dart';
 import '../../features/settings/presentation/privacy_policy_screen.dart';
@@ -60,6 +84,7 @@ GoRouter createAppRouter({
   final purchaseRepository = PurchaseRepository(database);
   final productRepository = ProductRepository(database);
   final warrantyRepository = WarrantyRepository(database);
+  final receiptRepository = ReceiptRepository(database);
   final returnDeadlineRepository = ReturnDeadlineRepository(database);
   final refundRepository = RefundRepository(database);
   final deadlineRepository = DeadlineRepository(database);
@@ -67,11 +92,35 @@ GoRouter createAppRouter({
   final reminderRepository = ReminderRepository(database);
   final documentRepository = DocumentRepository(database);
   final belongingRepository = BelongingRepository(database);
+  final belongingPhotoRepository = BelongingPhotoRepository(database);
+  final belongingHistoryRepository = BelongingHistoryRepository(database);
+  final lifecycleService = LifecycleService(database);
+  final tagRepository = TagRepository(database);
   final locationRepository = LocationRepository(database);
   final locationService = LocationService(database);
+  final placeRepository = PlaceRepository(database);
   final globalSearchService = GlobalSearchService(database);
   final documentService =
       DocumentService(documentRepository: documentRepository);
+  final reportService = ReportService(db: database);
+  final pdfReportBuilder = PdfReportBuilder();
+  final evidenceExportService = EvidenceExportService();
+  final moveRepository = MoveRepository(database);
+  final moveItemRepository = MoveItemRepository(database);
+  final moveService = MoveService(
+    db: database,
+    moves: moveRepository,
+    moveItems: moveItemRepository,
+    belongings: belongingRepository,
+    locations: locationRepository,
+    locationService: locationService,
+  );
+  // Phase 16–22 UI services (domain logic already existed; these wire it
+  // into user-facing screens).
+  final askKeepitService = AskKeepitService(database);
+  final smartOrganizationService = SmartOrganizationService(database);
+  final householdDashboardService = HouseholdDashboardService(database);
+  final itemLifetimeService = ItemLifetimeService(database);
 
   return GoRouter(
     initialLocation: HomeScreen.routePath,
@@ -162,6 +211,7 @@ GoRouter createAppRouter({
                       reminderRepository: reminderRepository,
                       reminderCoordinator: reminderCoordinator,
                       notificationService: notificationService,
+                      belongingRepository: belongingRepository,
                     ),
                     routes: [
                       GoRoute(
@@ -188,6 +238,8 @@ GoRouter createAppRouter({
                   belongingRepository: belongingRepository,
                   locationRepository: locationRepository,
                   categoryRepository: categoryRepository,
+                  locationService: locationService,
+                  placeRepository: placeRepository,
                 ),
                 routes: [
                   GoRoute(
@@ -197,6 +249,9 @@ GoRouter createAppRouter({
                       belongingRepository: belongingRepository,
                       categoryRepository: categoryRepository,
                       locationRepository: locationRepository,
+                      purchaseRepository: purchaseRepository,
+                      tagRepository: tagRepository,
+                      historyRepository: belongingHistoryRepository,
                     ),
                   ),
                   GoRoute(
@@ -205,6 +260,8 @@ GoRouter createAppRouter({
                     builder: (context, state) => LocationsScreen(
                       locationRepository: locationRepository,
                       belongingRepository: belongingRepository,
+                      locationService: locationService,
+                      placeRepository: placeRepository,
                       initialLocationId:
                           state.uri.queryParameters['focus'],
                     ),
@@ -215,8 +272,11 @@ GoRouter createAppRouter({
                         builder: (context, state) => LocationFormScreen(
                           locationRepository: locationRepository,
                           locationService: locationService,
+                          placeRepository: placeRepository,
                           initialParentId:
                               state.uri.queryParameters['parentId'],
+                          initialPlaceId:
+                              state.uri.queryParameters['placeId'],
                         ),
                       ),
                       GoRoute(
@@ -225,6 +285,7 @@ GoRouter createAppRouter({
                         builder: (context, state) => LocationFormScreen(
                           locationRepository: locationRepository,
                           locationService: locationService,
+                          placeRepository: placeRepository,
                           locationId:
                               state.pathParameters['locationId'],
                         ),
@@ -240,6 +301,15 @@ GoRouter createAppRouter({
                       locationRepository: locationRepository,
                       categoryRepository: categoryRepository,
                       documentService: documentService,
+                      purchaseRepository: purchaseRepository,
+                      receiptRepository: receiptRepository,
+                      warrantyRepository: warrantyRepository,
+                      tagRepository: tagRepository,
+                      photoRepository: belongingPhotoRepository,
+                      historyRepository: belongingHistoryRepository,
+                      locationService: locationService,
+                      placeRepository: placeRepository,
+                      lifecycleService: lifecycleService,
                     ),
                     routes: [
                       GoRoute(
@@ -249,7 +319,18 @@ GoRouter createAppRouter({
                           belongingRepository: belongingRepository,
                           categoryRepository: categoryRepository,
                           locationRepository: locationRepository,
+                          purchaseRepository: purchaseRepository,
+                          tagRepository: tagRepository,
+                          historyRepository: belongingHistoryRepository,
                           belongingId: state.pathParameters['id'],
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'lifetime',
+                        name: 'belonging-lifetime',
+                        builder: (context, state) => LifetimeRecordScreen(
+                          lifetimeService: itemLifetimeService,
+                          belongingId: state.pathParameters['id']!,
                         ),
                       ),
                     ],
@@ -354,6 +435,75 @@ GoRouter createAppRouter({
         builder: (context, state) => SearchScreen(
           searchService: globalSearchService,
           locationRepository: locationRepository,
+          locationService: locationService,
+          placeRepository: placeRepository,
+        ),
+      ),
+      GoRoute(
+        path: ReportsScreen.routePath,
+        name: 'reports',
+        builder: (context, state) => ReportsScreen(
+          reportService: reportService,
+          pdfBuilder: pdfReportBuilder,
+          exportService: evidenceExportService,
+          placeRepository: placeRepository,
+          locationRepository: locationRepository,
+          categoryRepository: categoryRepository,
+          belongingRepository: belongingRepository,
+        ),
+      ),
+      GoRoute(
+        path: MovesScreen.routePath,
+        name: 'moves',
+        builder: (context, state) => MovesScreen(
+          moveRepository: moveRepository,
+          placeRepository: placeRepository,
+        ),
+        routes: [
+          GoRoute(
+            path: ':id',
+            name: 'move-detail',
+            builder: (context, state) => MoveDetailScreen(
+              moveId: state.pathParameters['id']!,
+              moveRepository: moveRepository,
+              moveItemRepository: moveItemRepository,
+              belongingRepository: belongingRepository,
+              locationRepository: locationRepository,
+              placeRepository: placeRepository,
+              moveService: moveService,
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: AskScreen.routePath,
+        name: 'ask',
+        builder: (context, state) => AskScreen(
+          askService: askKeepitService,
+        ),
+      ),
+      GoRoute(
+        path: SyncScreen.routePath,
+        name: 'sync',
+        builder: (context, state) => SyncScreen(
+          database: database,
+        ),
+      ),
+      GoRoute(
+        path: OrganizeScreen.routePath,
+        name: 'organize',
+        builder: (context, state) => OrganizeScreen(
+          organizationService: smartOrganizationService,
+          belongingRepository: belongingRepository,
+          locationRepository: locationRepository,
+          categoryRepository: categoryRepository,
+        ),
+      ),
+      GoRoute(
+        path: HouseholdDashboardScreen.routePath,
+        name: 'household-dashboard',
+        builder: (context, state) => HouseholdDashboardScreen(
+          dashboardService: householdDashboardService,
         ),
       ),
       GoRoute(

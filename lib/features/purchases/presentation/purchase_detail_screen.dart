@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/database/keepit_database.dart';
+import '../../../core/database/repositories/belonging_repository.dart';
 import '../../../core/database/repositories/document_repository.dart';
 import '../../../core/database/repositories/product_repository.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
@@ -40,6 +41,7 @@ class PurchaseDetailScreen extends StatefulWidget {
     required this.reminderRepository,
     required this.reminderCoordinator,
     required this.notificationService,
+    this.belongingRepository,
     this.onEdit,
     this.onDeleted,
   });
@@ -56,6 +58,10 @@ class PurchaseDetailScreen extends StatefulWidget {
   final ReminderRepository reminderRepository;
   final ReminderCoordinator reminderCoordinator;
   final NotificationService notificationService;
+
+  /// Optional so host code that only shows purchase data can omit it; when
+  /// present, belongings linked to this purchase are listed.
+  final BelongingRepository? belongingRepository;
 
   /// Defaults to pushing the edit route.
   final VoidCallback? onEdit;
@@ -74,6 +80,7 @@ class _DetailData {
     required this.warranty,
     required this.returnDeadline,
     required this.refund,
+    required this.belongings,
   });
 
   final Purchase purchase;
@@ -81,6 +88,7 @@ class _DetailData {
   final Warranty? warranty;
   final ReturnDeadline? returnDeadline;
   final Refund? refund;
+  final List<Belonging> belongings;
 }
 
 class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
@@ -90,11 +98,16 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
     final purchase =
         await widget.purchaseRepository.getById(widget.purchaseId);
     if (purchase == null) return null;
+    final belongingRepository = widget.belongingRepository;
     final results = await Future.wait([
       widget.productRepository.getByPurchase(purchase.id),
       widget.warrantyRepository.getByPurchaseId(purchase.id),
       widget.returnDeadlineRepository.getByPurchaseId(purchase.id),
       widget.refundRepository.getByPurchaseId(purchase.id),
+      if (belongingRepository != null)
+        belongingRepository.byPurchaseId(purchase.id)
+      else
+        Future.value(const <Belonging>[]),
     ]);
     return _DetailData(
       purchase: purchase,
@@ -102,6 +115,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       warranty: results[1] as Warranty?,
       returnDeadline: results[2] as ReturnDeadline?,
       refund: results[3] as Refund?,
+      belongings: results[4] as List<Belonging>,
     );
   }
 
@@ -231,7 +245,49 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
             documentRepository: DocumentRepository(widget.database),
           ),
         ),
+        if (widget.belongingRepository != null) ...[
+          const SizedBox(height: 16),
+          _linkedItemsCard(theme, data),
+        ],
       ],
+    );
+  }
+
+  /// Belongings linked to this purchase: the reverse side of the
+  /// item → purchase link. Hidden when nothing is linked.
+  Widget _linkedItemsCard(ThemeData theme, _DetailData data) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Items from this purchase',
+                style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (data.belongings.isEmpty)
+              Text(
+                'No belongings are linked to this purchase yet. '
+                'Open a belonging and use “Link purchase” to connect one.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              for (final belonging in data.belongings)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.inventory_2_outlined),
+                  title: Text(belonging.name),
+                  subtitle: belonging.brand == null
+                      ? null
+                      : Text(belonging.brand!),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/belongings/${belonging.id}'),
+                ),
+          ],
+        ),
+      ),
     );
   }
 
