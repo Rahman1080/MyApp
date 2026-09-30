@@ -49,6 +49,71 @@ class _HouseholdDashboardScreenState
     }
   }
 
+  Future<void> _addMember() async {
+    final nameCtrl = TextEditingController();
+    final relationCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add household member'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Name *'),
+                autofocus: true,
+              ),
+              TextField(
+                controller: relationCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Relationship (e.g. Partner, Child)',
+                ),
+              ),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(labelText: 'Notes'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty) {
+                Navigator.of(context).pop(true);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await widget.dashboardService.addMember(
+        name: nameCtrl.text.trim(),
+        relationship: relationCtrl.text.trim().isEmpty
+            ? null
+            : relationCtrl.text.trim(),
+        notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added member "${nameCtrl.text.trim()}".')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,6 +126,11 @@ class _HouseholdDashboardScreenState
             onPressed: _loading ? null : _load,
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _loading ? null : _addMember,
+        icon: const Icon(Icons.person_add_outlined),
+        label: const Text('Add member'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

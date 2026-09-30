@@ -36,6 +36,7 @@ class ReportService {
        _locations = locationService ?? LocationService(db);
 
   final KeepItDatabase _db;
+  KeepItDatabase get db => _db;
   final BelongingPhotoRepository _photos;
   final CategoryRepository _categories;
   final DocumentRepository _documents;

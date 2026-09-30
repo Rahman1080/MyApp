@@ -93,6 +93,22 @@ class HouseholdDashboardService {
   final HouseholdMemberRepository _members;
   final LocationRepository _locations;
 
+  HouseholdMemberRepository get memberRepository => _members;
+
+  Future<String> addMember({
+    required String name,
+    String? relationship,
+    String? colorHex,
+    String? notes,
+  }) {
+    return _members.create(
+      name: name,
+      relationship: relationship,
+      colorHex: colorHex,
+      notes: notes,
+    );
+  }
+
   /// Generates the complete household dashboard.
   Future<HouseholdDashboard> getDashboard() async {
     final members = await _members.getAll();

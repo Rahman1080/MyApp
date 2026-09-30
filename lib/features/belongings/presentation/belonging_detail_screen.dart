@@ -227,7 +227,23 @@ class _BelongingDetailScreenState extends State<BelongingDetailScreen> {
       ),
     );
     if (selected == null || !mounted) return;
-    await widget.belongingRepository.setArchiveState(belonging.id, selected);
+
+    if (selected == BelongingArchiveState.sold) {
+      final details = await _showSoldDialog();
+      if (details == null) return;
+      await widget.lifecycleService.markSold(belongingId: belonging.id, details: details);
+    } else if (selected == BelongingArchiveState.donated) {
+      final details = await _showDonatedDialog();
+      if (details == null) return;
+      await widget.lifecycleService.markDonated(belongingId: belonging.id, details: details);
+    } else if (selected == BelongingArchiveState.disposed) {
+      final details = await _showDisposedDialog();
+      if (details == null) return;
+      await widget.lifecycleService.markDisposed(belongingId: belonging.id, details: details);
+    } else {
+      await widget.belongingRepository.setArchiveState(belonging.id, selected);
+    }
+
     await _load();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -240,6 +256,186 @@ class _BelongingDetailScreenState extends State<BelongingDetailScreen> {
         ),
       );
     }
+  }
+
+  Future<DispositionDetails?> _showSoldDialog() async {
+    final priceController = TextEditingController();
+    final currencyController = TextEditingController(text: 'USD');
+    final recipientController = TextEditingController();
+    final notesController = TextEditingController();
+
+    return showDialog<DispositionDetails>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark as sold'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: priceController,
+                decoration: const InputDecoration(labelText: 'Sale price (optional)'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              TextField(
+                controller: currencyController,
+                decoration: const InputDecoration(labelText: 'Currency'),
+              ),
+              TextField(
+                controller: recipientController,
+                decoration: const InputDecoration(labelText: 'Buyer (optional)'),
+              ),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(labelText: 'Notes'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final priceText = priceController.text;
+              int? priceCents;
+              if (priceText.isNotEmpty) {
+                final val = double.tryParse(priceText);
+                if (val != null) priceCents = (val * 100).toInt();
+              }
+              Navigator.of(context).pop(DispositionDetails(
+                priceCents: priceCents,
+                currencyCode: currencyController.text,
+                recipient: recipientController.text,
+                notes: notesController.text,
+                date: DateTime.now(),
+              ));
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<DispositionDetails?> _showDonatedDialog() async {
+    final valueController = TextEditingController();
+    final recipientController = TextEditingController();
+    final notesController = TextEditingController();
+
+    return showDialog<DispositionDetails>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark as donated'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: recipientController,
+                decoration: const InputDecoration(labelText: 'Organization/Recipient (optional)'),
+              ),
+              TextField(
+                controller: valueController,
+                decoration: const InputDecoration(labelText: 'Estimated value (optional)'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(labelText: 'Notes'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final priceText = valueController.text;
+              int? priceCents;
+              if (priceText.isNotEmpty) {
+                final val = double.tryParse(priceText);
+                if (val != null) priceCents = (val * 100).toInt();
+              }
+              Navigator.of(context).pop(DispositionDetails(
+                priceCents: priceCents,
+                currencyCode: 'USD',
+                recipient: recipientController.text,
+                notes: notesController.text,
+                date: DateTime.now(),
+              ));
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<DispositionDetails?> _showDisposedDialog() async {
+    final notesController = TextEditingController();
+    String method = BelongingDispositionMethod.trashed;
+
+    return showDialog<DispositionDetails>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Mark as disposed'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: method,
+                      decoration: const InputDecoration(labelText: 'Method'),
+                      items: [
+                        BelongingDispositionMethod.recycled,
+                        BelongingDispositionMethod.trashed,
+                        BelongingDispositionMethod.lost,
+                        BelongingDispositionMethod.other,
+                      ].map((m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(BelongingDispositionMethod.labelOf(m)),
+                          )).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => method = val);
+                      },
+                    ),
+                    TextField(
+                      controller: notesController,
+                      decoration: const InputDecoration(labelText: 'Reason/Notes'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(DispositionDetails(
+                      method: method,
+                      notes: notesController.text,
+                      date: DateTime.now(),
+                    ));
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
   }
 
   Future<void> _delete() async {

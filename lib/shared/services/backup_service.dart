@@ -318,6 +318,30 @@ class BackupService {
           () => _db.delete(_db.moveItems).go(),
           optional: true,
         ),
+        _codec<ServiceRecord>(
+          'service_records',
+          () => _db.select(_db.serviceRecords).get(),
+          ServiceRecord.fromJson,
+          (row) => _db.into(_db.serviceRecords).insert(row),
+          () => _db.delete(_db.serviceRecords).go(),
+          optional: true,
+        ),
+        _codec<WarrantyClaim>(
+          'warranty_claims',
+          () => _db.select(_db.warrantyClaims).get(),
+          WarrantyClaim.fromJson,
+          (row) => _db.into(_db.warrantyClaims).insert(row),
+          () => _db.delete(_db.warrantyClaims).go(),
+          optional: true,
+        ),
+        _codec<HouseholdMember>(
+          'household_members',
+          () => _db.select(_db.householdMembers).get(),
+          HouseholdMember.fromJson,
+          (row) => _db.into(_db.householdMembers).insert(row),
+          () => _db.delete(_db.householdMembers).go(),
+          optional: true,
+        ),
       ];
 
   _TableCodec _codec<T extends DataClass>(

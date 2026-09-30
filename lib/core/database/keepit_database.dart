@@ -25,6 +25,16 @@ part 'keepit_database.g.dart';
 ///   location to it. Belongings gains `is_container` and `container_id`.
 /// - v6 (2026-09-30): Phase 12 moving mode. New `moves` and `move_items`
 ///   tables for tracking relocations; no existing data touched.
+/// - v7 (2026-09-30): Phase 13 item lifecycle. Belongings gains 8 lifecycle
+///   columns (`acquisition_type`, `acquisition_date`, `disposition_date`,
+///   `disposition_price_cents`, `disposition_currency_code`,
+///   `disposition_recipient`, `disposition_method`, `disposition_notes`).
+/// - v8 (2026-09-30): Phase 14 service records and warranty claims. New
+///   `service_records` and `warranty_claims` tables; Warranties gains
+///   `belonging_id` (FK to belongings).
+/// - v9 (2026-09-30): Phase 15 household sharing. New `household_members`
+///   table; Belongings gains `privacy_level` (default 'private') and
+///   `owner_member_id` (FK to household_members).
 @DriftDatabase(
   tables: [
     UserSettings,

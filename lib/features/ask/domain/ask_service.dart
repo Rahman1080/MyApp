@@ -86,6 +86,21 @@ class AskKeepitService {
   final WarrantyRepository _warranties;
   final GlobalSearchService _search;
 
+  String _cleanSubject(String s) {
+    var cleaned = s.trim();
+    while (cleaned.endsWith('?') || cleaned.endsWith('.')) {
+      cleaned = cleaned.substring(0, cleaned.length - 1).trim();
+    }
+    if (cleaned.toLowerCase().startsWith('my ')) {
+      cleaned = cleaned.substring(3).trim();
+    } else if (cleaned.toLowerCase().startsWith('the ')) {
+      cleaned = cleaned.substring(4).trim();
+    } else if (cleaned.toLowerCase().startsWith('a ')) {
+      cleaned = cleaned.substring(2).trim();
+    }
+    return cleaned;
+  }
+
   /// Parses a natural language query into a structured intent.
   ParsedQuery parseQuery(String input) {
     final normalized = input.trim().toLowerCase();
@@ -96,7 +111,7 @@ class AskKeepitService {
     if (whereIs != null) {
       return ParsedQuery(
         intent: AskIntent.whereIs,
-        subject: whereIs.group(1)!.trim(),
+        subject: _cleanSubject(whereIs.group(1)!),
         original: original,
       );
     }
@@ -106,17 +121,20 @@ class AskKeepitService {
     if (whatIn != null) {
       return ParsedQuery(
         intent: AskIntent.whatIsIn,
-        subject: whatIn.group(1)!.trim(),
+        subject: _cleanSubject(whatIn.group(1)!),
         original: original,
       );
     }
 
-    // "warranty for X" / "warranty on X"
-    final warranty = RegExp(r"warranty (?:for|on) (.+)").firstMatch(normalized);
-    if (warranty != null) {
+    // "warranty for X" / "warranty on X" / "is the X under warranty"
+    final warrantyMatch1 = RegExp(r"warranty (?:for|on|of) (.+)").firstMatch(normalized);
+    final warrantyMatch2 = RegExp(r"(?:is|does) (?:the |my )?(.+?) (?:have a warranty|under warranty|covered by warranty)\??$").firstMatch(normalized);
+    final warrantyMatch3 = RegExp(r"do i have a warranty (?:for|on) (.+)\??$").firstMatch(normalized);
+    final warrantySubject = warrantyMatch1?.group(1) ?? warrantyMatch2?.group(1) ?? warrantyMatch3?.group(1);
+    if (warrantySubject != null) {
       return ParsedQuery(
         intent: AskIntent.warrantyFor,
-        subject: warranty.group(1)!.trim(),
+        subject: _cleanSubject(warrantySubject),
         original: original,
       );
     }
@@ -127,7 +145,7 @@ class AskKeepitService {
     if (whenBought != null) {
       return ParsedQuery(
         intent: AskIntent.whenBought,
-        subject: whenBought.group(1)!.trim(),
+        subject: _cleanSubject(whenBought.group(1)!),
         original: original,
       );
     }
@@ -137,7 +155,7 @@ class AskKeepitService {
     if (worth != null) {
       return ParsedQuery(
         intent: AskIntent.howMuchWorth,
-        subject: worth.group(1)!.trim(),
+        subject: _cleanSubject(worth.group(1)!),
         original: original,
       );
     }
@@ -147,7 +165,7 @@ class AskKeepitService {
     if (show != null) {
       return ParsedQuery(
         intent: AskIntent.search,
-        subject: show.group(1)!.trim(),
+        subject: _cleanSubject(show.group(1)!),
         original: original,
       );
     }
@@ -156,7 +174,7 @@ class AskKeepitService {
     if (normalized.isNotEmpty) {
       return ParsedQuery(
         intent: AskIntent.search,
-        subject: original,
+        subject: _cleanSubject(original),
         original: original,
       );
     }

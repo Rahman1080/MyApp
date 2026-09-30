@@ -182,7 +182,7 @@ class Warranties extends Table {
   // Direct link to a belonging (Phase 14). Nullable for legacy warranties
   // that are only linked via purchase.
   TextColumn get belongingId =>
-      text().nullable().references(Belongings, #id)();
+      text().nullable().references(Belongings, #id, onDelete: KeyAction.setNull)();
   TextColumn get provider => text().nullable()();
   TextColumn get warrantyNumber => text().nullable()();
   DateTimeColumn get startDate => dateTime().nullable()();
@@ -511,6 +511,11 @@ const List<String> keepItIndices = [
   'CREATE INDEX idx_moves_status ON moves (status)',
   'CREATE INDEX idx_move_items_move ON move_items (move_id, status)',
   'CREATE INDEX idx_move_items_belonging ON move_items (belonging_id)',
+  'CREATE INDEX IF NOT EXISTS idx_service_records_belonging ON service_records (belonging_id, service_date)',
+  'CREATE INDEX IF NOT EXISTS idx_warranty_claims_warranty ON warranty_claims (warranty_id, claim_date)',
+  'CREATE INDEX IF NOT EXISTS idx_warranties_belonging ON warranties (belonging_id)',
+  'CREATE INDEX IF NOT EXISTS idx_belongings_owner_member ON belongings (owner_member_id)',
+  'CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds (status)',
 ];
 
 // ---------------------------------------------------------------------------

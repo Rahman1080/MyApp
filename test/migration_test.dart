@@ -92,6 +92,9 @@ void main() {
       'places',
       'moves',
       'move_items',
+      'service_records',
+      'warranty_claims',
+      'household_members',
     ]) {
       expect(tableNames, contains(expected), reason: 'missing table $expected');
     }
@@ -113,6 +116,11 @@ void main() {
       'idx_tag_links_entity',
       'idx_locations_place_id',
       'idx_belongings_container_id',
+      'idx_service_records_belonging',
+      'idx_warranty_claims_warranty',
+      'idx_warranties_belonging',
+      'idx_belongings_owner_member',
+      'idx_refunds_status',
     ]) {
       expect(indexNames, contains(expected), reason: 'missing index $expected');
     }

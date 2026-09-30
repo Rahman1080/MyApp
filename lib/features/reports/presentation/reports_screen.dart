@@ -17,6 +17,8 @@ import '../domain/evidence_export_service.dart';
 import '../domain/inventory_report.dart';
 import '../domain/pdf_report_builder.dart';
 import '../domain/report_service.dart';
+import '../domain/advanced_report_service.dart';
+import '../../web/domain/web_companion_service.dart';
 
 /// Phase 11 — Insurance inventory and reports.
 ///
@@ -297,6 +299,59 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  Future<void> _shareCsv() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final report = _report;
+      if (report == null) return;
+      final csv = CsvExporter().export(report.items.map((i) => i.belonging).toList());
+      final stamp = DateFormat('yyyyMMdd-HHmmss').format(report.generatedAt);
+      final fileName = 'keepit-inventory-$stamp.csv';
+      final temp = File(p.join(Directory.systemTemp.path, fileName));
+      await temp.writeAsString(csv);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(temp.path)],
+          subject: '${report.title} (CSV)',
+          text: '${report.title} CSV export',
+        ),
+      );
+    } catch (_) {
+      _snack('CSV export failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _shareWebCompanion() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final report = _report;
+      if (report == null) return;
+      final html = await WebCompanionService(widget.reportService.db).generateHtml(
+        title: report.title,
+        locationId: _kind == ReportScopeKind.location ? _locationId : null,
+      );
+      final stamp = DateFormat('yyyyMMdd-HHmmss').format(report.generatedAt);
+      final fileName = 'keepit-web-$stamp.html';
+      final temp = File(p.join(Directory.systemTemp.path, fileName));
+      await temp.writeAsString(html);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(temp.path)],
+          subject: '${report.title} (Web Companion HTML)',
+          text: '${report.title} Web Companion HTML file',
+        ),
+      );
+    } catch (_) {
+      _snack('Web Companion export failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -538,6 +593,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
           onPressed: _busy ? null : _sharePdf,
           icon: const Icon(Icons.share_outlined),
           label: const Text('Share PDF'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _shareCsv,
+          icon: const Icon(Icons.table_chart_outlined),
+          label: const Text('Share CSV'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _shareWebCompanion,
+          icon: const Icon(Icons.web_outlined),
+          label: const Text('Export Web HTML'),
         ),
         OutlinedButton.icon(
           onPressed: _busy ? null : _exportEvidence,

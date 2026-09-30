@@ -348,7 +348,7 @@ class _ProgressCardState extends State<_ProgressCard> {
   }
 }
 
-class _MoveItemsList extends StatelessWidget {
+class _MoveItemsList extends StatefulWidget {
   const _MoveItemsList({
     required this.moveId,
     required this.moveItemRepository,
@@ -366,9 +366,17 @@ class _MoveItemsList extends StatelessWidget {
   final VoidCallback onChanged;
 
   @override
+  State<_MoveItemsList> createState() => _MoveItemsListState();
+}
+
+class _MoveItemsListState extends State<_MoveItemsList> {
+  String _searchQuery = '';
+  final Map<String, String> _belongingNames = {};
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<MoveItem>>(
-      stream: moveItemRepository.watchForMove(moveId),
+      stream: widget.moveItemRepository.watchForMove(widget.moveId),
       builder: (context, snapshot) {
         final items = snapshot.data ?? [];
         if (items.isEmpty) {
@@ -379,26 +387,79 @@ class _MoveItemsList extends StatelessWidget {
             ),
           );
         }
-        // Group by status.
-        final byStatus = <String, List<MoveItem>>{};
-        for (final item in items) {
-          byStatus.putIfAbsent(item.status, () => []).add(item);
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final status in MoveItemStatus.all)
-              if (byStatus[status]?.isNotEmpty ?? false)
-                _StatusGroup(
-                  status: status,
-                  items: byStatus[status]!,
-                  moveItemRepository: moveItemRepository,
-                  belongingRepository: belongingRepository,
-                  moveService: moveService,
-                  editable: editable,
-                  onChanged: onChanged,
+
+        return FutureBuilder<List<Belonging>>(
+          future: widget.belongingRepository.getAll(),
+          builder: (context, bSnapshot) {
+            if (bSnapshot.hasData) {
+              for (final b in bSnapshot.data!) {
+                _belongingNames[b.id] = b.name;
+              }
+            }
+
+            final filteredItems = _searchQuery.trim().isEmpty
+                ? items
+                : items.where((item) {
+                    final q = _searchQuery.toLowerCase();
+                    final name =
+                        (_belongingNames[item.belongingId] ?? '').toLowerCase();
+                    final box = (item.boxLabel ?? '').toLowerCase();
+                    final notes = (item.notes ?? '').toLowerCase();
+                    return name.contains(q) ||
+                        box.contains(q) ||
+                        notes.contains(q);
+                  }).toList();
+
+            final byStatus = <String, List<MoveItem>>{};
+            for (final item in filteredItems) {
+              byStatus.putIfAbsent(item.status, () => []).add(item);
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search items, boxes or notes...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () =>
+                                  setState(() => _searchQuery = ''),
+                            )
+                          : null,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (val) => setState(() => _searchQuery = val),
+                  ),
                 ),
-          ],
+                if (filteredItems.isEmpty && _searchQuery.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(
+                      child: Text('No matching items found in this move.'),
+                    ),
+                  ),
+                for (final status in MoveItemStatus.all)
+                  if (byStatus[status]?.isNotEmpty ?? false)
+                    _StatusGroup(
+                      status: status,
+                      items: byStatus[status]!,
+                      moveItemRepository: widget.moveItemRepository,
+                      belongingRepository: widget.belongingRepository,
+                      moveService: widget.moveService,
+                      editable: widget.editable,
+                      onChanged: widget.onChanged,
+                      initiallyExpanded: _searchQuery.isNotEmpty ||
+                          status == MoveItemStatus.toPack,
+                    ),
+              ],
+            );
+          },
         );
       },
     );
@@ -414,6 +475,7 @@ class _StatusGroup extends StatelessWidget {
     required this.moveService,
     required this.editable,
     required this.onChanged,
+    this.initiallyExpanded = false,
   });
 
   final String status;
@@ -423,6 +485,7 @@ class _StatusGroup extends StatelessWidget {
   final MoveService moveService;
   final bool editable;
   final VoidCallback onChanged;
+  final bool initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -430,7 +493,7 @@ class _StatusGroup extends StatelessWidget {
     return Card(
       child: ExpansionTile(
         title: Text('${MoveItemStatus.label(status)} (${items.length})'),
-        initiallyExpanded: status == MoveItemStatus.toPack,
+        initiallyExpanded: initiallyExpanded,
         children: [
           if (editable && next != null)
             Padding(
