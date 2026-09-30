@@ -15,7 +15,8 @@ import 'package:keepit/shared/services/location_service.dart';
 
 KeepItDatabase _openDb() => KeepItDatabase(NativeDatabase.memory());
 
-String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+int _idCounter = 0;
+String _newId() => '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
 Future<String> _addBelonging(
   BelongingRepository repo, {
