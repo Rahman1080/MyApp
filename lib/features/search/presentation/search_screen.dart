@@ -6,7 +6,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/location_repository.dart';
+import '../../../core/database/repositories/place_repository.dart';
 import '../../../shared/services/global_search.dart';
+import '../../../shared/services/location_service.dart';
 import '../../belongings/presentation/widgets/location_path.dart';
 
 /// "Where is it?" — one search field across purchases, receipts, belongings,
@@ -17,12 +19,16 @@ class SearchScreen extends StatefulWidget {
     super.key,
     required this.searchService,
     required this.locationRepository,
+    required this.locationService,
+    required this.placeRepository,
   });
 
   static const String routePath = '/search';
 
   final GlobalSearchService searchService;
   final LocationRepository locationRepository;
+  final LocationService locationService;
+  final PlaceRepository placeRepository;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -33,6 +39,8 @@ class _SearchScreenState extends State<SearchScreen> {
   Timer? _debounce;
   GlobalSearchResults? _results;
   Map<String, String> _paths = const {};
+  // Belonging id -> full "where is it?" path (place > locations > container).
+  Map<String, String> _wherePaths = const {};
   bool _searching = false;
   bool _hasSearched = false;
 
@@ -44,7 +52,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _loadPaths() async {
     final locations = await widget.locationRepository.getAll();
-    if (mounted) setState(() => _paths = buildLocationPaths(locations));
+    final places = await widget.placeRepository.getAll();
+    if (mounted) {
+      setState(() => _paths = buildLocationPaths(locations, places: places));
+    }
   }
 
   @override
@@ -72,9 +83,16 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     setState(() => _searching = true);
     final results = await widget.searchService.search(query);
+    final wherePaths = <String, String>{};
+    for (final belonging in results.belongings) {
+      final path =
+          await widget.locationService.belongingWherePath(belonging);
+      if (path.isNotEmpty) wherePaths[belonging.id] = path;
+    }
     if (mounted) {
       setState(() {
         _results = results;
+        _wherePaths = wherePaths;
         _searching = false;
         _hasSearched = true;
       });
@@ -162,10 +180,44 @@ class _SearchScreenState extends State<SearchScreen> {
                             icon: Icons.inventory_2_outlined,
                             titleOf: (b) => b.name,
                             subtitleOf: (b) => b.brand,
-                            trailing: (b) => LocationPathText(
-                              locationId: b.locationId,
-                              paths: _paths,
-                            ),
+                            trailing: (b) {
+                              final path = _wherePaths[b.id];
+                              if (path == null || path.isEmpty) {
+                                return LocationPathText(
+                                  locationId: b.locationId,
+                                  paths: _paths,
+                                );
+                              }
+                              return Tooltip(
+                                message: path,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (b.containerId != null)
+                                      const Padding(
+                                        padding:
+                                            EdgeInsets.only(right: 4),
+                                        child: Icon(
+                                          Icons.inventory_outlined,
+                                          size: 14,
+                                        ),
+                                      ),
+                                    Flexible(
+                                      child: Text(
+                                        path,
+                                        maxLines: 2,
+                                        overflow:
+                                            TextOverflow.ellipsis,
+                                        textAlign: TextAlign.right,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                             onTap: (b) =>
                                 context.push('/stuff/${b.id}'),
                           ),

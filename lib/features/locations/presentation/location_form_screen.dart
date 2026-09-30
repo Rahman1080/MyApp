@@ -2,8 +2,10 @@ import 'package:drift/drift.dart' as drift;
 import 'package:flutter/material.dart';
 
 import '../../../core/database/keepit_database.dart';
+import '../../../core/database/location_meta.dart';
 import '../../../core/database/tables.dart' show newRecordId;
 import '../../../core/database/repositories/location_repository.dart';
+import '../../../core/database/repositories/place_repository.dart';
 import '../../../shared/services/location_service.dart';
 import '../../belongings/presentation/widgets/location_path.dart';
 
@@ -14,19 +16,25 @@ class LocationFormScreen extends StatefulWidget {
     super.key,
     required this.locationRepository,
     required this.locationService,
+    required this.placeRepository,
     this.locationId,
     this.initialParentId,
+    this.initialPlaceId,
     this.onSaved,
   });
 
   final LocationRepository locationRepository;
   final LocationService locationService;
+  final PlaceRepository placeRepository;
 
   /// Null for a new location, set when editing.
   final String? locationId;
 
   /// Pre-selected parent for "add sub-location" flows.
   final String? initialParentId;
+
+  /// Pre-selected place for "add location" flows (e.g. from a place chip).
+  final String? initialPlaceId;
 
   /// Called after a successful save. Defaults to popping the form.
   final VoidCallback? onSaved;
@@ -41,6 +49,8 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
   final _notesController = TextEditingController();
 
   String? _parentId;
+  String? _placeId;
+  List<Place> _places = const [];
   bool _loaded = false;
   bool _saving = false;
 
@@ -54,6 +64,7 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
   }
 
   Future<void> _load() async {
+    _places = await widget.placeRepository.getAll();
     if (_isEditing) {
       final location =
           await widget.locationRepository.getById(widget.locationId!);
@@ -61,7 +72,18 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
         _nameController.text = location.name;
         _notesController.text = location.notes ?? '';
         _parentId = location.parentLocationId;
+        _placeId = location.placeId;
       }
+    } else {
+      // New locations inherit the parent's place; otherwise use the
+      // pre-selected place (or fall back to the default place).
+      _placeId = widget.initialPlaceId;
+      if (_parentId != null) {
+        final parent =
+            await widget.locationRepository.getById(_parentId!);
+        _placeId = parent?.placeId ?? _placeId;
+      }
+      _placeId ??= _places.isEmpty ? null : _places.first.id;
     }
     if (mounted) setState(() => _loaded = true);
   }
@@ -86,6 +108,9 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
             : drift.Value(newRecordId()),
         name: drift.Value(name),
         parentLocationId: drift.Value(_parentId),
+        placeId: _placeId == null
+            ? const drift.Value.absent()
+            : drift.Value(_placeId!),
         notes: drift.Value(
           _notesController.text.trim().isEmpty
               ? null
@@ -166,7 +191,44 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
                             : null,
                     textInputAction: TextInputAction.next,
                   ),
+                  if (!_isEditing) ...[
+                    const SizedBox(height: 12),
+                    const Text('Room templates'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final template in LocationTemplates.all)
+                          ActionChip(
+                            label: Text(template),
+                            onPressed: () => setState(() =>
+                                _nameController.text = template),
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
+                  if (_places.length > 1)
+                    DropdownButtonFormField<String>(
+                      initialValue: _places.any((p) => p.id == _placeId)
+                          ? _placeId
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Place',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final place in _places)
+                          DropdownMenuItem(
+                            value: place.id,
+                            child: Text(place.name),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _placeId = value),
+                    ),
+                  if (_places.length > 1) const SizedBox(height: 16),
                   FutureBuilder<List<Location>>(
                     future: _parentCandidates(),
                     builder: (context, snapshot) {
@@ -200,8 +262,16 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
                               ),
                             ),
                         ],
-                        onChanged: (value) =>
-                            setState(() => _parentId = value),
+                        onChanged: (value) async {
+                          setState(() => _parentId = value);
+                          if (value != null) {
+                            final parent = await widget.locationRepository
+                                .getById(value);
+                            if (mounted && parent != null) {
+                              setState(() => _placeId = parent.placeId);
+                            }
+                          }
+                        },
                       );
                     },
                   ),
