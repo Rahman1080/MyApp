@@ -26,6 +26,13 @@ class WarrantyRepository {
         .getSingleOrNull();
   }
 
+  /// Warranties directly linked to a belonging (Phase 14+).
+  Future<List<Warranty>> forBelonging(String belongingId) {
+    return (_db.select(_db.warranties)
+          ..where((t) => t.belongingId.equals(belongingId)))
+        .get();
+  }
+
   Stream<Warranty?> watchByPurchase(String purchaseId) {
     return ((_db.select(_db.warranties)
           ..where((t) => t.purchaseId.equals(purchaseId)))

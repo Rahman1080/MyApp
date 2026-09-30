@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/database/keepit_database.dart';
 
-/// Builds id → "Home > Bedroom > Drawer" display strings from a flat list of
-/// [Location]s. Cycle-safe: a location that loops back on itself is rendered
+/// Builds id → "My Home > Bedroom > Drawer" display strings from a flat list
+/// of [Location]s. When [places] is given, each path is prefixed with its
+/// place name. Cycle-safe: a location that loops back on itself is rendered
 /// with the names collected before the repeat.
 Map<String, String> buildLocationPaths(List<Location> locations,
-    {String separator = ' > '}) {
+    {List<Place> places = const [], String separator = ' > '}) {
   final byId = <String, Location>{for (final l in locations) l.id: l};
+  final placeNames = <String, String>{for (final p in places) p.id: p.name};
   final paths = <String, String>{};
   for (final location in locations) {
     final names = <String>[];
@@ -18,6 +20,8 @@ Map<String, String> buildLocationPaths(List<Location> locations,
       final parentId = current.parentLocationId;
       current = parentId == null ? null : byId[parentId];
     }
+    final placeName = placeNames[location.placeId];
+    if (placeName != null) names.insert(0, placeName);
     paths[location.id] = names.join(separator);
   }
   return paths;

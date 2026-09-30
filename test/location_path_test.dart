@@ -11,6 +11,7 @@ void main() {
       id: id,
       name: name,
       parentLocationId: parentId,
+      placeId: 'place-default',
       notes: null,
       photoPath: null,
       createdAt: now,
