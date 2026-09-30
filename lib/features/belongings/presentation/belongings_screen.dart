@@ -3,21 +3,29 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/database/belonging_meta.dart';
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/belonging_repository.dart';
 import '../../../core/database/repositories/category_repository.dart';
 import '../../../core/database/repositories/location_repository.dart';
+import '../../../core/database/repositories/place_repository.dart';
+import '../../../shared/services/location_service.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../locations/presentation/move_destination_sheet.dart';
 import 'widgets/location_path.dart';
 
-/// My Stuff tab: every belonging, filterable by category and searchable.
-/// "Where did I put it?" — each row shows its location breadcrumb.
+/// My Stuff tab: belongings filterable by archive state, category and
+/// searchable across name/brand/model/serial number/notes. Defaults to
+/// owned items; archived/sold/donated/disposed stay reachable via the
+/// status chips.
 class BelongingsScreen extends StatefulWidget {
   const BelongingsScreen({
     super.key,
     required this.belongingRepository,
     required this.locationRepository,
     required this.categoryRepository,
+    required this.locationService,
+    required this.placeRepository,
   });
 
   static const String routePath = '/stuff';
@@ -25,6 +33,8 @@ class BelongingsScreen extends StatefulWidget {
   final BelongingRepository belongingRepository;
   final LocationRepository locationRepository;
   final CategoryRepository categoryRepository;
+  final LocationService locationService;
+  final PlaceRepository placeRepository;
 
   @override
   State<BelongingsScreen> createState() => _BelongingsScreenState();
@@ -33,24 +43,43 @@ class BelongingsScreen extends StatefulWidget {
 class _BelongingsScreenState extends State<BelongingsScreen> {
   String _query = '';
   String? _categoryId; // null = all categories
+  String? _archiveState = BelongingArchiveState.owned; // null = all states
+  bool _selecting = false;
+  final Set<String> _selected = <String>{};
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Stuff'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: 'Search everything',
-            onPressed: () => context.push('/search'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_tree_outlined),
-            tooltip: 'Browse locations',
-            onPressed: () => context.push('/stuff/locations'),
-          ),
-        ],
+        title: Text(_selecting ? '${_selected.length} selected' : 'My Stuff'),
+        leading: _selecting
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Cancel selection',
+                onPressed: _cancelSelection,
+              )
+            : null,
+        actions: _selecting
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.drive_file_move_outlined),
+                  tooltip: 'Move selected',
+                  onPressed:
+                      _selected.isEmpty ? null : () => _moveSelected(context),
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Search everything',
+                  onPressed: () => context.push('/search'),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.account_tree_outlined),
+                  tooltip: 'Browse locations',
+                  onPressed: () => context.push('/stuff/locations'),
+                ),
+              ],
       ),
       body: Column(
         children: [
@@ -72,9 +101,16 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
             selectedId: _categoryId,
             onSelected: (id) => setState(() => _categoryId = id),
           ),
+          _ArchiveStateChips(
+            selected: _archiveState,
+            onSelected: (state) => setState(() => _archiveState = state),
+          ),
           Expanded(
             child: StreamBuilder<List<Belonging>>(
-              stream: widget.belongingRepository.watchAll(),
+              stream: _archiveState == null
+                  ? widget.belongingRepository.watchAll()
+                  : widget.belongingRepository
+                      .watchByArchiveStates([_archiveState!]),
               builder: (context, belongingSnapshot) {
                 if (belongingSnapshot.connectionState ==
                     ConnectionState.waiting) {
@@ -93,9 +129,16 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
                       }
                       if (_query.isEmpty) return true;
                       return b.name.toLowerCase().contains(_query) ||
-                          (b.brand?.toLowerCase().contains(_query) ?? false);
+                          (b.brand?.toLowerCase().contains(_query) ?? false) ||
+                          (b.model?.toLowerCase().contains(_query) ?? false) ||
+                          (b.serialNumber?.toLowerCase().contains(_query) ??
+                              false) ||
+                          (b.notes?.toLowerCase().contains(_query) ?? false);
                     })
                     .toList();
+                final hasFilters = _query.isNotEmpty ||
+                    _categoryId != null ||
+                    _archiveState != BelongingArchiveState.owned;
                 return StreamBuilder<List<Location>>(
                   stream: widget.locationRepository.watchAll(),
                   builder: (context, locationSnapshot) {
@@ -110,20 +153,16 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
                         if (belongings.isEmpty) {
                           return EmptyState(
                             icon: Icons.inventory_2_outlined,
-                            headline: _query.isEmpty && _categoryId == null
-                                ? 'Nothing stored yet'
-                                : 'No matches',
-                            body: _query.isEmpty && _categoryId == null
-                                ? 'Add belongings and where you keep them — '
+                            headline: hasFilters ? 'No matches' : 'Nothing stored yet',
+                            body: hasFilters
+                                ? 'Try a different search, category or status.'
+                                : 'Add belongings and where you keep them — '
                                     'like “Passport → Bedroom → Top drawer” — '
-                                    'so you can always find them again.'
-                                : 'Try a different search or category.',
-                            actionLabel: _query.isEmpty && _categoryId == null
-                                ? 'Add belonging'
-                                : null,
-                            onAction: _query.isEmpty && _categoryId == null
-                                ? () => context.push('/stuff/new')
-                                : null,
+                                    'so you can always find them again.',
+                            actionLabel: hasFilters ? null : 'Add belonging',
+                            onAction: hasFilters
+                                ? null
+                                : () => context.push('/stuff/new'),
                           );
                         }
                         return ListView.separated(
@@ -139,8 +178,18 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
                               categoryName: belonging.categoryId == null
                                   ? null
                                   : categoryNames[belonging.categoryId],
-                              onTap: () =>
-                                  context.push('/stuff/${belonging.id}'),
+                              selected: _selected.contains(belonging.id),
+                              selecting: _selecting,
+                              onTap: () {
+                                if (_selecting) {
+                                  _toggleSelected(belonging.id);
+                                } else {
+                                  context
+                                      .push('/stuff/${belonging.id}');
+                                }
+                              },
+                              onLongPress: () =>
+                                  _toggleSelected(belonging.id),
                             );
                           },
                         );
@@ -164,6 +213,58 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
   Future<Map<String, String>> _categoryNames() async {
     final categories = await widget.categoryRepository.getAll();
     return {for (final c in categories) c.id: c.name};
+  }
+
+  void _toggleSelected(String id) {
+    setState(() {
+      if (_selected.remove(id)) {
+        if (_selected.isEmpty) _selecting = false;
+      } else {
+        _selected.add(id);
+        _selecting = true;
+      }
+    });
+  }
+
+  void _cancelSelection() {
+    setState(() {
+      _selected.clear();
+      _selecting = false;
+    });
+  }
+
+  Future<void> _moveSelected(BuildContext context) async {
+    final ids = Set<String>.from(_selected);
+    final excluded =
+        await containerMoveExclusions(widget.locationService, ids);
+    if (!context.mounted) return;
+    final destination = await showMoveDestinationSheet(
+      context: context,
+      locationRepository: widget.locationRepository,
+      belongingRepository: widget.belongingRepository,
+      locationService: widget.locationService,
+      placeRepository: widget.placeRepository,
+      excludeContainerIds: excluded,
+      title: 'Move ${ids.length} item${ids.length == 1 ? '' : 's'} to…',
+    );
+    if (destination == null || !context.mounted) return;
+    try {
+      switch (destination) {
+        case MoveToLocation(:final locationId):
+          await widget.belongingRepository
+              .moveItemsToLocation(ids, locationId);
+        case MoveToContainer(:final containerId):
+          await widget.belongingRepository
+              .moveItemsToContainer(ids, containerId);
+      }
+      _cancelSelection();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not move items: $e')),
+        );
+      }
+    }
   }
 }
 
@@ -213,18 +314,61 @@ class _CategoryChips extends StatelessWidget {
   }
 }
 
+class _ArchiveStateChips extends StatelessWidget {
+  const _ArchiveStateChips({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String? selected; // null = all states
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          ChoiceChip(
+            label: const Text('All statuses'),
+            selected: selected == null,
+            onSelected: (_) => onSelected(null),
+          ),
+          const SizedBox(width: 8),
+          for (final state in BelongingArchiveState.all) ...[
+            ChoiceChip(
+              label: Text(BelongingArchiveState.labels[state]!),
+              selected: selected == state,
+              onSelected: (_) => onSelected(state),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _BelongingTile extends StatelessWidget {
   const _BelongingTile({
     required this.belonging,
     required this.paths,
     this.categoryName,
     this.onTap,
+    this.onLongPress,
+    this.selected = false,
+    this.selecting = false,
   });
 
   final Belonging belonging;
   final Map<String, String> paths;
   final String? categoryName;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool selected;
+  final bool selecting;
 
   @override
   Widget build(BuildContext context) {
@@ -239,11 +383,39 @@ class _BelongingTile extends StatelessWidget {
       if (subtitle.isNotEmpty) subtitle.write(' · ');
       subtitle.write('×${belonging.quantity}');
     }
+    final archived = belonging.archiveState != BelongingArchiveState.owned;
 
     return Card(
+      color: selected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : null,
       child: ListTile(
-        leading: _PhotoThumb(photoPath: belonging.photoPath),
-        title: Text(belonging.name),
+        leading: selecting
+            ? Checkbox(
+                value: selected,
+                onChanged: (_) => onTap?.call(),
+              )
+            : _PhotoThumb(photoPath: belonging.photoPath),
+        title: Row(
+          children: [
+            Expanded(child: Text(belonging.name)),
+            if (archived)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  BelongingArchiveState.labels[belonging.archiveState] ??
+                      belonging.archiveState,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -262,6 +434,7 @@ class _BelongingTile extends StatelessWidget {
               )
             : null,
         onTap: onTap,
+        onLongPress: onLongPress,
       ),
     );
   }
