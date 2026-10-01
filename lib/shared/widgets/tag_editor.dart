@@ -178,8 +178,8 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
                     ActionChip(
                       label: Text(s),
                       onPressed: () async {
-                        await widget.onSelect(s);
                         if (context.mounted) Navigator.of(context).pop();
+                        await widget.onSelect(s);
                       },
                     ),
                 ],
@@ -197,8 +197,8 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
                         leading: const Icon(Icons.label_outline),
                         title: Text(tag.name),
                         onTap: () async {
-                          await widget.onSelect(tag.name);
                           if (context.mounted) Navigator.of(context).pop();
+                          await widget.onSelect(tag.name);
                         },
                       ),
                   ],
@@ -236,7 +236,7 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
   Future<void> _submit() async {
     final name = _controller.text.trim();
     if (name.isEmpty) return;
-    await widget.onSelect(name);
     if (mounted) Navigator.of(context).pop();
+    await widget.onSelect(name);
   }
 }

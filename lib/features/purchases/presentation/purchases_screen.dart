@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_chip.dart';
+import '../../../shared/widgets/keepit_search_bar.dart';
 import 'purchase_detail_screen.dart';
 import 'widgets/purchase_list_tile.dart';
 
@@ -76,31 +78,13 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SearchBar(
-              controller: _searchController,
-              hintText: 'Search purchases',
-              leading: const Icon(Icons.search),
-              trailing: _searchQuery.isEmpty
-                  ? null
-                  : [
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      ),
-                    ],
-              onChanged: (value) =>
-                  setState(() => _searchQuery = value.trim().toLowerCase()),
-            ),
+          KeepitSearchBar(
+            hintText: 'Search purchases by product, store...',
+            onChanged: (value) =>
+                setState(() => _searchQuery = value.trim().toLowerCase()),
           ),
-          const SizedBox(height: 8),
           _filterChips(),
-          const Divider(height: 1),
+          const SizedBox(height: 4),
           Expanded(child: _purchaseList()),
         ],
       ),
@@ -114,7 +98,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
   Widget _filterChips() {
     return SizedBox(
-      height: 48,
+      height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -123,8 +107,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         itemBuilder: (context, index) {
           final status = _statusFilters[index];
           final selected = _statusFilter == status;
-          return ChoiceChip(
-            label: Text(status == null ? 'All' : _statusLabel(status)),
+          return KeepitFilterChip(
+            label: status == null ? 'All' : _statusLabel(status),
             selected: selected,
             onSelected: (_) => setState(() => _statusFilter = status),
           );

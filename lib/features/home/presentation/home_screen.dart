@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/database/repositories/belonging_repository.dart';
 import '../../../core/database/repositories/deadline_repository.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
+import '../../../core/database/repositories/refund_repository.dart';
 import '../../../core/database/repositories/return_deadline_repository.dart';
+import '../../../core/database/repositories/service_record_repository.dart';
 import '../../../core/database/repositories/warranty_repository.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_card.dart';
+import '../../../shared/widgets/keepit_section.dart';
+import '../../../shared/widgets/keepit_stat_card.dart';
 import '../../purchases/presentation/purchase_detail_screen.dart';
 import '../../purchases/presentation/widgets/purchase_list_tile.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'home_view_model.dart';
 
-/// Home tab: "what needs my attention?" overview, driven by real data.
+/// Home tab: "what needs my attention?" command center, driven by real data.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -19,6 +26,9 @@ class HomeScreen extends StatefulWidget {
     required this.warrantyRepository,
     required this.returnDeadlineRepository,
     required this.deadlineRepository,
+    this.belongingRepository,
+    this.serviceRecordRepository,
+    this.refundRepository,
   });
 
   static const String routePath = '/home';
@@ -27,6 +37,9 @@ class HomeScreen extends StatefulWidget {
   final WarrantyRepository warrantyRepository;
   final ReturnDeadlineRepository returnDeadlineRepository;
   final DeadlineRepository deadlineRepository;
+  final BelongingRepository? belongingRepository;
+  final ServiceRecordRepository? serviceRecordRepository;
+  final RefundRepository? refundRepository;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,6 +51,9 @@ class _HomeScreenState extends State<HomeScreen> {
     warrantyRepository: widget.warrantyRepository,
     returnDeadlineRepository: widget.returnDeadlineRepository,
     deadlineRepository: widget.deadlineRepository,
+    belongingRepository: widget.belongingRepository,
+    serviceRecordRepository: widget.serviceRecordRepository,
+    refundRepository: widget.refundRepository,
   );
 
   @override
@@ -56,8 +72,33 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('KeepIt'),
+        title: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: const BoxDecoration(
+                color: AppColors.mintAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const Text(
+              'KEEPIT',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search everything',
+            onPressed: () => context.push('/search'),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
@@ -71,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_model.loading) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (_model.totalPurchases == 0) {
+          if (_model.totalPurchases == 0 && _model.totalBelongings == 0) {
             return _newUserEmptyState(context);
           }
           return _dashboard(context);
@@ -84,126 +125,199 @@ class _HomeScreenState extends State<HomeScreen> {
     return EmptyState(
       icon: Icons.inventory_2_outlined,
       headline: 'Welcome to KeepIt',
-      body: 'Keep track of what you buy, where the receipt is, and when you '
-          'need to act — everything stays privately on this device.',
+      body: 'Keep track of what you buy, where things are stored, warranties, '
+          'and deadlines — everything stays privately on this device.',
       actionLabel: 'Add your first purchase',
       onAction: () => context.push('/purchases/new'),
     );
   }
 
   Widget _dashboard(BuildContext context) {
-    final theme = Theme.of(context);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.only(bottom: 32),
       children: [
-        _greeting(theme),
-        const SizedBox(height: 16),
-        _statsRow(),
-        const SizedBox(height: 16),
-        _attentionSection(theme),
-        const SizedBox(height: 16),
-        _recentSection(theme),
-        const SizedBox(height: 16),
-        Text('Quick actions', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        _greeting(),
+        const SizedBox(height: 12),
+        _statsGrid(),
+        _attentionSection(),
+        _recentSection(),
+        const KeepitSection(title: 'Quick actions'),
         _quickActions(),
       ],
     );
   }
 
-  Widget _greeting(ThemeData theme) {
+  Widget _greeting() {
+    final theme = Theme.of(context);
     final hour = DateTime.now().hour;
     final greeting = hour < 12
         ? 'Good morning'
         : hour < 18
             ? 'Good afternoon'
             : 'Good evening';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(greeting, style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          _model.attentionCount == 0
-              ? 'You are all caught up.'
-              : '${_model.attentionCount} thing${_model.attentionCount == 1 ? '' : 's'} need${_model.attentionCount == 1 ? 's' : ''} your attention.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
 
-  Widget _statsRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            icon: Icons.receipt_long_outlined,
-            value: '${_model.totalPurchases}',
-            label: 'Purchases',
-            onTap: () => context.go('/purchases'),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.verified_outlined,
-            value: '${_model.activeWarrantyCount}',
-            label: 'Warranties',
-            onTap: null,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.event_outlined,
-            value: '${_model.dueThisWeekCount}',
-            label: 'Due this week',
-            onTap: null,
-          ),
-        ),
-      ],
-    );
-  }
+    final attentionCount = _model.attentionCount;
 
-  Widget _attentionSection(ThemeData theme) {
-    final items = _model.attentionItems;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Needs attention', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (items.isEmpty)
-          Card(
-            color: theme.colorScheme.primaryContainer,
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: Icon(
-                Icons.check_circle_outline,
-                color: theme.colorScheme.onPrimaryContainer,
-              ),
-              title: Text(
-                'You are all caught up',
-                style: TextStyle(
-                  color: theme.colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                greeting,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  letterSpacing: -0.3,
+                  fontSize: 22,
                 ),
               ),
-              subtitle: Text(
-                'Deadlines, warranties and returns will surface here.',
-                style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
+              const SizedBox(height: 2),
+              Text(
+                attentionCount == 0
+                    ? 'All caught up'
+                    : '$attentionCount item${attentionCount == 1 ? '' : 's'} need your attention',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: attentionCount == 0
+                      ? AppColors.mintAccent
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsGrid() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: KeepitStatCard(
+              icon: Icons.receipt_long_outlined,
+              value: '${_model.totalPurchases}',
+              label: 'Purchases',
+              onTap: () => context.go('/purchases'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: KeepitStatCard(
+              icon: Icons.inventory_2_outlined,
+              value: '${_model.totalBelongings}',
+              label: 'My Stuff',
+              onTap: () => context.go('/stuff'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: KeepitStatCard(
+              icon: Icons.verified_outlined,
+              value: '${_model.activeWarrantyCount}',
+              label: 'Warranties',
+              onTap: () => context.push('/purchases/warranties'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: KeepitStatCard(
+              icon: Icons.event_outlined,
+              value: '${_model.dueThisWeekCount}',
+              label: 'Due soon',
+              onTap: () => context.go('/deadlines'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _attentionSection() {
+    final theme = Theme.of(context);
+    final items = _model.attentionItems;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        KeepitSection(
+          title: 'Needs attention',
+          trailing: items.isNotEmpty
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.urgent.withAlpha(28),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: const TextStyle(
+                      color: AppColors.urgent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              : null,
+        ),
+        if (items.isEmpty)
+          KeepitCard(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.mintAccent.withAlpha(24),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.mintAccent,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You are all caught up',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Approaching deadlines and warranties will surface here.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           )
         else
-          Card(
+          KeepitCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: [
                 for (var i = 0; i < items.length; i++) ...[
                   _attentionTile(theme, items[i]),
-                  if (i < items.length - 1) const Divider(height: 1),
+                  if (i < items.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 56,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
                 ],
               ],
             ),
@@ -213,61 +327,96 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _attentionTile(ThemeData theme, AttentionItem item) {
-    final color = item.severity == AttentionSeverity.critical
-        ? theme.colorScheme.error
-        : const Color(0xFFB25E09);
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color.withAlpha(28),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(item.icon, color: color),
-      ),
-      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle:
-          Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: item.purchaseId == null
-          ? null
-          : const Icon(Icons.chevron_right),
-      onTap: item.purchaseId == null
-          ? null
-          : () => context.push(
-                PurchaseDetailScreen.routePathFor(item.purchaseId!),
+    final Color badgeColor = switch (item.severity) {
+      AttentionSeverity.critical => AppColors.urgent,
+      AttentionSeverity.warning => AppColors.warning,
+      AttentionSeverity.info => AppColors.mintAccent,
+    };
+
+    final destination = item.routePath ??
+        (item.purchaseId != null ? PurchaseDetailScreen.routePathFor(item.purchaseId!) : null);
+
+    return InkWell(
+      onTap: destination != null ? () => context.push(destination) : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: badgeColor.withAlpha(24),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: Icon(item.icon, size: 20, color: badgeColor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    item.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (destination != null)
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _recentSection(ThemeData theme) {
+  Widget _recentSection() {
+    final purchases = _model.recentPurchases;
+    if (purchases.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Recent purchases', style: theme.textTheme.titleMedium),
-            TextButton(
-              onPressed: () => context.go('/purchases'),
-              child: const Text('See all'),
-            ),
-          ],
+        KeepitSection(
+          title: 'Recent purchases',
+          actionLabel: 'See all',
+          onAction: () => context.go('/purchases'),
         ),
-        Card(
+        KeepitCard(
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
-              for (var i = 0; i < _model.recentPurchases.length; i++) ...[
+              for (var i = 0; i < purchases.length; i++) ...[
                 PurchaseListTile(
-                  purchase: _model.recentPurchases[i],
+                  purchase: purchases[i],
                   onTap: () => context.push(
-                    PurchaseDetailScreen.routePathFor(
-                      _model.recentPurchases[i].id,
-                    ),
+                    PurchaseDetailScreen.routePathFor(purchases[i].id),
                   ),
                 ),
-                if (i < _model.recentPurchases.length - 1)
-                  const Divider(height: 1, indent: 72),
+                if (i < purchases.length - 1)
+                  Divider(
+                    height: 1,
+                    indent: 72,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
               ],
             ],
           ),
@@ -277,36 +426,73 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _quickActions() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _QuickAction(
-          icon: Icons.add_shopping_cart,
-          label: 'Add purchase',
-          onTap: () => context.push('/purchases/new'),
-        ),
-        _QuickAction(
-          icon: Icons.document_scanner_outlined,
-          label: 'Scan receipt',
-          onTap: () => _scanReceipt(context),
-        ),
-        _QuickAction(
-          icon: Icons.event_outlined,
-          label: 'Add deadline',
-          onTap: () => context.push('/deadlines/new'),
-        ),
-        _QuickAction(
-          icon: Icons.inventory_2_outlined,
-          label: 'Add belonging',
-          onTap: () => context.push('/stuff/new'),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _actionPill(
+            icon: Icons.add_shopping_cart,
+            label: 'Add purchase',
+            onTap: () => context.push('/purchases/new'),
+          ),
+          _actionPill(
+            icon: Icons.document_scanner_outlined,
+            label: 'Scan receipt',
+            onTap: () => _scanReceipt(context),
+          ),
+          _actionPill(
+            icon: Icons.event_outlined,
+            label: 'Add deadline',
+            onTap: () => context.push('/deadlines/new'),
+          ),
+          _actionPill(
+            icon: Icons.inventory_2_outlined,
+            label: 'Add belonging',
+            onTap: () => context.push('/stuff/new'),
+          ),
+        ],
+      ),
     );
   }
 
-  /// "Scan receipt" needs a purchase to attach the receipt to: let the user
-  /// pick one, or create a purchase first.
+  Widget _actionPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// "Scan receipt" needs a purchase to attach the receipt to.
   Future<void> _scanReceipt(BuildContext context) async {
     final purchases = await widget.purchaseRepository.getAll();
     if (!context.mounted) return;
@@ -359,75 +545,5 @@ class _HomeScreenState extends State<HomeScreen> {
     if (selected != null && context.mounted) {
       context.push('/scan?purchaseId=${Uri.encodeComponent(selected)}');
     }
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
-    required this.value,
-    required this.label,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String value;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          child: Column(
-            children: [
-              Icon(icon, color: theme.colorScheme.primary),
-              const SizedBox(height: 8),
-              Text(
-                value,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                semanticsLabel: '$value $label',
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  const _QuickAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: Icon(icon, size: 18),
-      label: Text(label),
-      onPressed: onTap,
-    );
   }
 }

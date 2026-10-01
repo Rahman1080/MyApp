@@ -18,6 +18,7 @@ import '../../core/database/repositories/receipt_repository.dart';
 import '../../core/database/repositories/refund_repository.dart';
 import '../../core/database/repositories/reminder_repository.dart';
 import '../../core/database/repositories/return_deadline_repository.dart';
+import '../../core/database/repositories/service_record_repository.dart';
 import '../../core/database/repositories/tag_repository.dart';
 import '../../core/database/repositories/warranty_repository.dart';
 import '../../core/notifications/notification_service.dart';
@@ -121,6 +122,7 @@ GoRouter createAppRouter({
   final smartOrganizationService = SmartOrganizationService(database);
   final householdDashboardService = HouseholdDashboardService(database);
   final itemLifetimeService = ItemLifetimeService(database);
+  final serviceRecordRepository = ServiceRecordRepository(database);
 
   return GoRouter(
     initialLocation: HomeScreen.routePath,
@@ -140,6 +142,9 @@ GoRouter createAppRouter({
                   warrantyRepository: warrantyRepository,
                   returnDeadlineRepository: returnDeadlineRepository,
                   deadlineRepository: deadlineRepository,
+                  belongingRepository: belongingRepository,
+                  serviceRecordRepository: serviceRecordRepository,
+                  refundRepository: refundRepository,
                 ),
               ),
             ],
@@ -531,9 +536,40 @@ GoRouter createAppRouter({
               'This feature is coming in a later phase.',
         ),
       ),
+      // Redirects for legacy / alternative /belongings paths to /stuff
+      GoRoute(
+        path: '/belongings/:id/lifetime',
+        redirect: (context, state) =>
+            '/stuff/${state.pathParameters['id']}/lifetime',
+      ),
+      GoRoute(
+        path: '/belongings/:id/edit',
+        redirect: (context, state) =>
+            '/stuff/${state.pathParameters['id']}/edit',
+      ),
+      GoRoute(
+        path: '/belongings/:id',
+        redirect: (context, state) =>
+            '/stuff/${state.pathParameters['id']}',
+      ),
+      GoRoute(
+        path: '/belongings',
+        redirect: (context, state) => '/stuff',
+      ),
     ],
     errorBuilder: (context, state) => Scaffold(
-      appBar: AppBar(title: const Text('KeepIt')),
+      appBar: AppBar(
+        title: const Text('KeepIt'),
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(HomeScreen.routePath);
+            }
+          },
+        ),
+      ),
       body: Center(
         child: Text('Page not found: ${state.uri}'),
       ),

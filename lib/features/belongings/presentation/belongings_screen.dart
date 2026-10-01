@@ -9,8 +9,13 @@ import '../../../core/database/repositories/belonging_repository.dart';
 import '../../../core/database/repositories/category_repository.dart';
 import '../../../core/database/repositories/location_repository.dart';
 import '../../../core/database/repositories/place_repository.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/utilities/money.dart';
 import '../../../shared/services/location_service.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_card.dart';
+import '../../../shared/widgets/keepit_chip.dart';
+import '../../../shared/widgets/keepit_search_bar.dart';
 import '../../locations/presentation/move_destination_sheet.dart';
 import 'widgets/location_path.dart';
 
@@ -70,11 +75,6 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
               ]
             : [
                 IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: 'Search everything',
-                  onPressed: () => context.push('/search'),
-                ),
-                IconButton(
                   icon: const Icon(Icons.account_tree_outlined),
                   tooltip: 'Browse locations',
                   onPressed: () => context.push('/stuff/locations'),
@@ -83,18 +83,10 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search belongings…',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (value) =>
-                  setState(() => _query = value.trim().toLowerCase()),
-            ),
+          KeepitSearchBar(
+            hintText: 'Search belongings by name, brand, model...',
+            onChanged: (value) =>
+                setState(() => _query = value.trim().toLowerCase()),
           ),
           _CategoryChips(
             categoryRepository: widget.categoryRepository,
@@ -155,21 +147,17 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
                             icon: Icons.inventory_2_outlined,
                             headline: hasFilters ? 'No matches' : 'Nothing stored yet',
                             body: hasFilters
-                                ? 'Try a different search, category or status.'
-                                : 'Add belongings and where you keep them — '
-                                    'like “Passport → Bedroom → Top drawer” — '
-                                    'so you can always find them again.',
+                                ? 'Try a different search, category or status filter.'
+                                : 'Keep track of the things you own, where they are, and their history.',
                             actionLabel: hasFilters ? null : 'Add belonging',
                             onAction: hasFilters
                                 ? null
                                 : () => context.push('/stuff/new'),
                           );
                         }
-                        return ListView.separated(
-                          padding: const EdgeInsets.all(16),
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(top: 4, bottom: 80),
                           itemCount: belongings.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 8),
                           itemBuilder: (context, index) {
                             final belonging = belongings[index];
                             return _BelongingTile(
@@ -205,7 +193,7 @@ class _BelongingsScreenState extends State<BelongingsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/stuff/new'),
         icon: const Icon(Icons.add),
-        label: const Text('Belonging'),
+        label: const Text('Add belonging'),
       ),
     );
   }
@@ -285,24 +273,25 @@ class _CategoryChips extends StatelessWidget {
       future: categoryRepository.getAll(),
       builder: (context, snapshot) {
         final categories = snapshot.data ?? const <Category>[];
-        if (categories.isEmpty) return const SizedBox(height: 8);
+        if (categories.isEmpty) return const SizedBox.shrink();
         return SizedBox(
-          height: 48,
+          height: 40,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
-              ChoiceChip(
-                label: const Text('All'),
+              KeepitFilterChip(
+                label: 'All',
                 selected: selectedId == null,
                 onSelected: (_) => onSelected(null),
               ),
               const SizedBox(width: 8),
               for (final category in categories) ...[
-                ChoiceChip(
-                  label: Text(category.name),
+                KeepitFilterChip(
+                  label: category.name,
                   selected: selectedId == category.id,
-                  onSelected: (_) => onSelected(category.id),
+                  onSelected: (selected) =>
+                      onSelected(selected ? category.id : null),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -320,28 +309,28 @@ class _ArchiveStateChips extends StatelessWidget {
     required this.onSelected,
   });
 
-  final String? selected; // null = all states
+  final String? selected;
   final ValueChanged<String?> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48,
+      height: 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         children: [
-          ChoiceChip(
-            label: const Text('All statuses'),
+          KeepitFilterChip(
+            label: 'All states',
             selected: selected == null,
             onSelected: (_) => onSelected(null),
           ),
           const SizedBox(width: 8),
           for (final state in BelongingArchiveState.all) ...[
-            ChoiceChip(
-              label: Text(BelongingArchiveState.labels[state]!),
+            KeepitFilterChip(
+              label: BelongingArchiveState.labels[state]!,
               selected: selected == state,
-              onSelected: (_) => onSelected(state),
+              onSelected: (isSelected) => onSelected(isSelected ? state : null),
             ),
             const SizedBox(width: 8),
           ],
@@ -379,62 +368,126 @@ class _BelongingTile extends StatelessWidget {
       if (subtitle.isNotEmpty) subtitle.write(' · ');
       subtitle.write(belonging.brand);
     }
-    if (belonging.quantity != 1) {
+    if (belonging.model != null && belonging.model!.isNotEmpty) {
+      if (subtitle.isNotEmpty) subtitle.write(' ');
+      subtitle.write(belonging.model);
+    }
+    if (belonging.quantity > 1) {
       if (subtitle.isNotEmpty) subtitle.write(' · ');
       subtitle.write('×${belonging.quantity}');
     }
     final archived = belonging.archiveState != BelongingArchiveState.owned;
 
-    return Card(
+    return KeepitCard(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      borderRadius: 14,
       color: selected
-          ? Theme.of(context).colorScheme.primaryContainer
+          ? theme.colorScheme.primaryContainer.withAlpha(80)
           : null,
-      child: ListTile(
-        leading: selecting
-            ? Checkbox(
+      borderColor: selected
+          ? theme.colorScheme.primary
+          : null,
+      onTap: onTap,
+      child: Row(
+        children: [
+          if (selecting)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Checkbox(
                 value: selected,
                 onChanged: (_) => onTap?.call(),
-              )
-            : _PhotoThumb(photoPath: belonging.photoPath),
-        title: Row(
-          children: [
-            Expanded(child: Text(belonging.name)),
-            if (archived)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  BelongingArchiveState.labels[belonging.archiveState] ??
-                      belonging.archiveState,
-                  style: theme.textTheme.labelSmall,
-                ),
               ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (subtitle.isNotEmpty) Text(subtitle.toString()),
-            LocationPathText(
-              locationId: belonging.locationId,
-              paths: paths,
+            )
+          else
+            _PhotoThumb(photoPath: belonging.photoPath),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        belonging.name,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (belonging.valueCents != null)
+                      Text(
+                        formatMoney(belonging.valueCents!, belonging.currencyCode ?? 'USD'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                if (subtitle.isNotEmpty)
+                  Text(
+                    subtitle.toString(),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.place_outlined,
+                      size: 13,
+                      color: belonging.locationId == null
+                          ? theme.colorScheme.onSurfaceVariant.withAlpha(140)
+                          : AppColors.mintAccent,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: LocationPathText(
+                        locationId: belonging.locationId,
+                        paths: paths,
+                      ),
+                    ),
+                    if (archived)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          BelongingArchiveState.labels[belonging.archiveState] ??
+                              belonging.archiveState,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-        trailing: belonging.locationId == null
-            ? Icon(
-                Icons.help_outline,
-                color: theme.colorScheme.onSurfaceVariant,
-                semanticLabel: 'No location set',
-              )
-            : null,
-        onTap: onTap,
-        onLongPress: onLongPress,
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(100),
+          ),
+        ],
       ),
     );
   }
@@ -447,24 +500,32 @@ class _PhotoThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final path = photoPath;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: SizedBox(
-        width: 56,
-        height: 56,
+        width: 46,
+        height: 46,
         child: path == null || path.isEmpty
             ? Container(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Icon(Icons.inventory_2_outlined),
+                color: theme.colorScheme.surfaceContainerHighest.withAlpha(140),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 22,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               )
             : Image.file(
                 File(path),
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
-                  color:
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
+                  color: theme.colorScheme.surfaceContainerHighest.withAlpha(140),
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: 22,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
       ),

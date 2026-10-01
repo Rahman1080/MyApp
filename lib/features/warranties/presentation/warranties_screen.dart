@@ -5,7 +5,10 @@ import 'package:intl/intl.dart';
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
 import '../../../core/database/repositories/warranty_repository.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/services/warranty_service.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_card.dart';
 
 /// Warranties list: every warranty with its purchase, status badge and
 /// days-left. Reached from the Purchases tab; the form is per purchase.
@@ -36,12 +39,17 @@ class WarrantiesScreen extends StatelessWidget {
           }
           final data = snapshot.data!;
           if (data.warranties.isEmpty) {
-            return const Center(
-              child: Text('No warranties yet. Add one from a purchase.'),
+            return EmptyState(
+              icon: Icons.verified_outlined,
+              headline: 'No warranties yet',
+              body:
+                  'Keep track of coverage, receipts, and expiration dates for your purchases.',
+              actionLabel: 'Add warranty',
+              onAction: () => context.push('/purchases/warranties/new'),
             );
           }
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             itemCount: data.warranties.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
@@ -104,57 +112,111 @@ class _WarrantyTile extends StatelessWidget {
     final daysLeft = expiry == null
         ? null
         : warrantyDaysRemaining(expiry, now);
-    final statusColor = status == WarrantyStatus.expired
-        ? theme.colorScheme.error
-        : status == WarrantyStatus.expiringSoon
-            ? theme.colorScheme.tertiary
-            : theme.colorScheme.primary;
 
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.verified_user_outlined),
-        title: Text(purchaseName),
-        subtitle: Text(
-          [
-            if (warranty.provider?.isNotEmpty == true) warranty.provider!,
-            if (warranty.expirationDate != null)
-              'Expires ${DateFormat.yMMMd().format(warranty.expirationDate!)}',
-          ].join(' · '),
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                switch (status) {
-                  WarrantyStatus.active => 'Active',
-                  WarrantyStatus.expiringSoon => 'Expiring soon',
-                  WarrantyStatus.expired => 'Expired',
-                },
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
+    final Color statusColor;
+    final String statusLabel;
+
+    switch (status) {
+      case WarrantyStatus.active:
+        statusColor = AppColors.mintAccent;
+        statusLabel = 'Active';
+        break;
+      case WarrantyStatus.expiringSoon:
+        statusColor = AppColors.warning;
+        statusLabel = 'Expiring soon';
+        break;
+      case WarrantyStatus.expired:
+        statusColor = AppColors.urgent;
+        statusLabel = 'Expired';
+        break;
+    }
+
+    final subtitleParts = [
+      if (warranty.provider?.isNotEmpty == true) warranty.provider!,
+      if (warranty.expirationDate != null)
+        'Expires ${DateFormat.yMMMd().format(warranty.expirationDate!)}',
+    ];
+
+    return KeepitCard(
+      onTap: () => context.push('/purchases/warranties/${warranty.id}/edit'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: statusColor.withAlpha(24),
+              borderRadius: BorderRadius.circular(10),
             ),
-            if (daysLeft != null && status != WarrantyStatus.expired)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
+            child: Icon(
+              Icons.verified_outlined,
+              color: statusColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  purchaseName,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (subtitleParts.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitleParts.join(' · '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withAlpha(24),
+                  borderRadius: BorderRadius.circular(999),
+                ),
                 child: Text(
-                  '$daysLeft days left',
-                  style: theme.textTheme.bodySmall,
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
                 ),
               ),
-          ],
-        ),
-        onTap: () => context.push('/purchases/warranties/${warranty.id}/edit'),
+              if (daysLeft != null && status != WarrantyStatus.expired) ...[
+                const SizedBox(height: 3),
+                Text(
+                  '$daysLeft days left',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

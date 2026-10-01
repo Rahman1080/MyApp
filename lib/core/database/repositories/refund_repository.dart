@@ -21,6 +21,12 @@ class RefundRepository {
     return refund;
   }
 
+  Future<List<Refund>> getAll() {
+    return (_db.select(_db.refunds)
+          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
+  }
+
   Future<Refund?> getByPurchaseId(String purchaseId) {
     return (_db.select(_db.refunds)
           ..where((t) => t.purchaseId.equals(purchaseId)))

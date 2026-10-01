@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
+
+import '../../../core/database/keepit_database.dart' show Reminder;
 
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/security/pin_lock_service.dart';
@@ -16,7 +19,9 @@ import '../../organize/presentation/organize_screen.dart';
 import '../../household/presentation/household_dashboard_screen.dart';
 import '../../sync/presentation/sync_screen.dart';
 import 'privacy_policy_screen.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/services/backup_service.dart';
+import '../../../shared/widgets/keepit_card.dart';
 
 /// Settings: appearance, reminders, app lock, backup/restore, about.
 ///
@@ -52,6 +57,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricAvailable = false;
   String? _appVersion;
   bool _busy = false;
+  int? _pendingReminderCount;
+  String? _nextReminderSummary;
+  bool _testingNotification = false;
 
   @override
   void initState() {
@@ -68,8 +76,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       widget.pinLock.hasPin().catchError((_) => false),
       widget.pinLock.canUseBiometrics().catchError((_) => false),
       PackageInfo.fromPlatform().then((i) => i.version).catchError((_) => ''),
+      widget.notificationService.pendingNotificationCount().catchError((_) => 0),
+      widget.notificationService.getNextUpcomingReminder().catchError((_) => null),
     ]);
     if (!mounted) return;
+    final nextReminder = results[7] as Reminder?;
+    String? nextSummary;
+    if (nextReminder != null) {
+      final dateStr = DateFormat.MMMd().add_jm().format(nextReminder.remindAt);
+      nextSummary = '${nextReminder.title} ($dateStr)';
+    }
     setState(() {
       _remindersEnabled = results[0] as bool;
       _appLockEnabled = results[1] as bool;
@@ -78,6 +94,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _biometricAvailable = results[4] as bool;
       final version = results[5] as String;
       if (version.isNotEmpty) _appVersion = version;
+      _pendingReminderCount = results[6] as int;
+      _nextReminderSummary = nextSummary;
     });
   }
 
@@ -117,15 +135,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await widget.settingsRepository.setRemindersEnabled(enabled);
       if (enabled) {
+        if (!mounted) return;
+        await widget.notificationService.requestPermissions(context);
         await widget.notificationService.syncReminders();
       } else {
         await widget.notificationService.cancelAllNotifications();
       }
+      await _load();
     } catch (_) {
       if (mounted) {
         setState(() => _remindersEnabled = !enabled);
         _snack('Could not update reminder settings.');
       }
+    }
+  }
+
+  Future<void> _sendTestNotification() async {
+    if (_testingNotification) return;
+    setState(() => _testingNotification = true);
+    try {
+      if (!mounted) return;
+      await widget.notificationService.requestPermissions(context);
+      await widget.notificationService.showTestNotification();
+      _snack('Test notification sent. Check your status bar!');
+    } catch (e) {
+      _snack('Failed to send test notification: $e');
+    } finally {
+      if (mounted) setState(() => _testingNotification = false);
+    }
+  }
+
+  Future<void> _scheduleTestReminder() async {
+    if (_testingNotification) return;
+    setState(() => _testingNotification = true);
+    try {
+      if (!mounted) return;
+      await widget.notificationService.requestPermissions(context);
+      await widget.notificationService.scheduleTestReminder(secondsFromNow: 10);
+      await _load();
+      _snack('Reminder scheduled for 10s from now. Lock screen to test!');
+    } catch (e) {
+      _snack('Failed to schedule test reminder: $e');
+    } finally {
+      if (mounted) setState(() => _testingNotification = false);
     }
   }
 
@@ -377,10 +429,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          _SectionHeader('Appearance'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          const _SectionHeader('Appearance'),
+          KeepitCard(
+            padding: const EdgeInsets.all(12),
             child: ValueListenableBuilder<ThemeMode>(
               valueListenable: widget.themeModeListenable,
               builder: (context, mode, _) => SegmentedButton<ThemeMode>(
@@ -406,147 +459,313 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          _SectionHeader('Reminders'),
-          SwitchListTile(
-            title: const Text('Reminders'),
-            subtitle: const Text(
-              'Get notified about deadlines, warranties and returns. '
-              'Turning this off cancels all scheduled notifications.',
-            ),
-            value: _remindersEnabled,
-            onChanged: _setReminders,
-          ),
-          _SectionHeader('App lock'),
-          SwitchListTile(
-            title: const Text('Lock app with PIN'),
-            subtitle: const Text(
-              'Require your PIN every time KeepIt opens.',
-            ),
-            value: _appLockEnabled,
-            onChanged: _toggleAppLock,
-          ),
-          if (_hasPin) ...[
-            ListTile(
-              title: const Text('Change PIN'),
-              leading: const Icon(Icons.pin_outlined),
-              onTap: _changePin,
-            ),
-            if (_biometricAvailable)
-              SwitchListTile(
-                title: const Text('Unlock with biometrics'),
-                subtitle: const Text(
-                  'Use fingerprint or face unlock instead of typing your PIN.',
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Notifications & Security'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Reminders'),
+                  subtitle: const Text(
+                    'Get notified about deadlines, warranties and returns.',
+                  ),
+                  value: _remindersEnabled,
+                  onChanged: _setReminders,
                 ),
-                value: _biometricEnabled,
-                onChanged: _toggleBiometric,
+                if (_remindersEnabled) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.notifications_active_outlined,
+                                size: 18,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _pendingReminderCount != null
+                                      ? '$_pendingReminderCount reminders active with system'
+                                      : 'Reminders active with system',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_nextReminderSummary != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Next: $_nextReminderSummary',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilledButton.tonalIcon(
+                                onPressed: _testingNotification ? null : _sendTestNotification,
+                                icon: const Icon(Icons.send_outlined, size: 16),
+                                label: const Text('Send Test Now'),
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: _testingNotification ? null : _scheduleTestReminder,
+                                icon: const Icon(Icons.timer_outlined, size: 16),
+                                label: const Text('Schedule Test (10s)'),
+                                style: OutlinedButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const Divider(height: 1, indent: 16),
+                SwitchListTile(
+                  title: const Text('Lock app with PIN'),
+                  subtitle: const Text(
+                    'Require your PIN every time KeepIt opens.',
+                  ),
+                  value: _appLockEnabled,
+                  onChanged: _toggleAppLock,
+                ),
+                if (_hasPin) ...[
+                  const Divider(height: 1, indent: 16),
+                  ListTile(
+                    title: const Text('Change PIN'),
+                    leading: const Icon(Icons.pin_outlined),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: _changePin,
+                  ),
+                  if (_biometricAvailable) ...[
+                    const Divider(height: 1, indent: 16),
+                    SwitchListTile(
+                      title: const Text('Unlock with biometrics'),
+                      subtitle: const Text(
+                        'Use fingerprint or face unlock instead of typing your PIN.',
+                      ),
+                      value: _biometricEnabled,
+                      onChanged: _toggleBiometric,
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Organization & Tools'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Inventory reports'),
+                  subtitle: const Text(
+                    'PDF reports and evidence exports of your belongings.',
+                  ),
+                  leading: const Icon(Icons.summarize_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => context.push(ReportsScreen.routePath),
+                  enabled: !_busy,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: const Text('Moving Mode'),
+                  subtitle: const Text(
+                    'Track packing, transit, and unpacking for a move.',
+                  ),
+                  leading: const Icon(Icons.local_shipping_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => context.push(MovesScreen.routePath),
+                  enabled: !_busy,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: const Text('Smart Organization'),
+                  subtitle: const Text(
+                    'Review suggestions to tidy up your inventory.',
+                  ),
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => context.push(OrganizeScreen.routePath),
+                  enabled: !_busy,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Intelligence'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: ListTile(
+              title: const Text('Ask KEEPIT'),
+              subtitle: const Text(
+                'Ask about your stuff in plain language.',
               ),
-          ],
-          _SectionHeader('Backup & restore'),
-          ListTile(
-            title: const Text('Back up now'),
-            subtitle: const Text(
-              'Save everything to a ZIP file you control.',
-            ),
-            leading: const Icon(Icons.backup_outlined),
-            onTap: _createBackup,
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Inventory reports'),
-            subtitle: const Text(
-              'PDF reports and evidence exports of your belongings.',
-            ),
-            leading: const Icon(Icons.summarize_outlined),
-            onTap: () => context.push(ReportsScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Moving Mode'),
-            subtitle: const Text(
-              'Track packing, transit, and unpacking for a move.',
-            ),
-            leading: const Icon(Icons.local_shipping_outlined),
-            onTap: () => context.push(MovesScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Ask KEEPIT'),
-            subtitle: const Text(
-              'Ask about your stuff in plain language.',
-            ),
-            leading: const Icon(Icons.chat_bubble_outline),
-            onTap: () => context.push(AskScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Smart Organization'),
-            subtitle: const Text(
-              'Review suggestions to tidy up your inventory.',
-            ),
-            leading: const Icon(Icons.auto_awesome_outlined),
-            onTap: () => context.push(OrganizeScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Household Command Center'),
-            subtitle: const Text(
-              'Dashboard of members, privacy, and locations.',
-            ),
-            leading: const Icon(Icons.dashboard_outlined),
-            onTap: () =>
-                context.push(HouseholdDashboardScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Sync with another device'),
-            subtitle: const Text(
-              'Export or import sync files manually.',
-            ),
-            leading: const Icon(Icons.sync_outlined),
-            onTap: () => context.push(SyncScreen.routePath),
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: const Text('Restore from backup'),
-            subtitle: const Text(
-              'Replaces all current data with a backup file.',
-            ),
-            leading: const Icon(Icons.restore_outlined),
-            onTap: _restoreBackup,
-            enabled: !_busy,
-          ),
-          ListTile(
-            title: Text(
-              'Delete all data',
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            subtitle: const Text(
-              'Permanently remove everything from this device.',
-            ),
-            leading: Icon(Icons.delete_forever_outlined,
-                color: theme.colorScheme.error),
-            onTap: _deleteAllData,
-            enabled: !_busy,
-          ),
-          _SectionHeader('About'),
-          ListTile(
-            title: const Text('Privacy policy'),
-            leading: const Icon(Icons.privacy_tip_outlined),
-            onTap: () => context.push(PrivacyPolicyScreen.routePath),
-          ),
-          ListTile(
-            title: const Text('Version'),
-            subtitle: Text(_appVersion ?? '…'),
-            leading: const Icon(Icons.info_outline),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 32),
-            child: Text(
-              'KeepIt works fully offline. Your data never leaves this '
-              'device unless you export a backup yourself.',
-              style: TextStyle(fontSize: 12),
+              leading: const Icon(Icons.chat_bubble_outline),
+              trailing: const Icon(Icons.chevron_right, size: 20),
+              onTap: () => context.push(AskScreen.routePath),
+              enabled: !_busy,
             ),
           ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Household & Sharing'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Household Command Center'),
+                  subtitle: const Text(
+                    'Dashboard of members, privacy, and locations.',
+                  ),
+                  leading: const Icon(Icons.dashboard_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () =>
+                      context.push(HouseholdDashboardScreen.routePath),
+                  enabled: !_busy,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: const Text('Sync with another device'),
+                  subtitle: const Text(
+                    'Export or import sync files manually.',
+                  ),
+                  leading: const Icon(Icons.sync_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => context.push(SyncScreen.routePath),
+                  enabled: !_busy,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Data & Storage'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Back up now'),
+                  subtitle: const Text(
+                    'Save everything to a ZIP file you control.',
+                  ),
+                  leading: const Icon(Icons.backup_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _createBackup,
+                  enabled: !_busy,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: const Text('Restore from backup'),
+                  subtitle: const Text(
+                    'Replaces all current data with a backup file.',
+                  ),
+                  leading: const Icon(Icons.restore_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _restoreBackup,
+                  enabled: !_busy,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: Text(
+                    'Delete all data',
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                  subtitle: const Text(
+                    'Permanently remove everything from this device.',
+                  ),
+                  leading: Icon(
+                    Icons.delete_forever_outlined,
+                    color: theme.colorScheme.error,
+                  ),
+                  onTap: _deleteAllData,
+                  enabled: !_busy,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('About & Privacy'),
+          KeepitCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Privacy policy'),
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => context.push(PrivacyPolicyScreen.routePath),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  title: const Text('Version'),
+                  subtitle: Text(_appVersion ?? '…'),
+                  leading: const Icon(Icons.info_outline),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.shield_outlined,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(160),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'KeepIt works fully offline. Your data never leaves this device unless you export a backup yourself.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -561,12 +780,15 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+        title.toUpperCase(),
+        style: const TextStyle(
+          color: AppColors.mintAccent,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+          letterSpacing: 0.8,
+        ),
       ),
     );
   }

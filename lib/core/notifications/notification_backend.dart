@@ -25,6 +25,14 @@ abstract class NotificationBackend {
     String? payload,
   });
 
+  /// Displays an immediate notification. Used for testing and alerts.
+  Future<void> show({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  });
+
   /// Cancels one scheduled notification by id. No-op when absent.
   Future<void> cancel(int id);
 

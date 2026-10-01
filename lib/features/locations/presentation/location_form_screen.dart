@@ -126,6 +126,13 @@ class _LocationFormScreenState extends State<LocationFormScreen> {
       if (widget.onSaved != null) {
         widget.onSaved!();
       } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isEditing ? 'Location updated.' : 'Location saved.',
+            ),
+          ),
+        );
         Navigator.of(context).pop(true);
       }
     } finally {

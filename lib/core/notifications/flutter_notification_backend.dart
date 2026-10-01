@@ -101,6 +101,30 @@ class FlutterNotificationBackend implements NotificationBackend {
   }
 
   @override
+  Future<void> show({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) {
+    return _plugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          keepItReminderChannelId,
+          'Reminders',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      payload: payload,
+    );
+  }
+
+  @override
   Future<void> cancel(int id) => _plugin.cancel(id: id);
 
   @override

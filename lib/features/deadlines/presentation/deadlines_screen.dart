@@ -5,6 +5,10 @@ import 'package:intl/intl.dart';
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/deadline_repository.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_card.dart';
+import '../../../shared/widgets/keepit_chip.dart';
 import 'deadline_form_screen.dart';
 
 enum _Segment { overdue, upcoming, later, done }
@@ -22,7 +26,7 @@ String _segmentLabel(_Segment segment) {
   }
 }
 
-/// The real Deadlines tab: Overdue / Upcoming / Later / Done segments over
+/// The Deadlines tab: Overdue / Upcoming / Later / Done segments over
 /// the user's deadlines.
 class DeadlinesScreen extends StatefulWidget {
   const DeadlinesScreen({
@@ -62,23 +66,11 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Deadlines')),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SegmentedButton<_Segment>(
-              segments: [
-                for (final segment in _Segment.values)
-                  ButtonSegment(
-                    value: segment,
-                    label: Text(_segmentLabel(segment)),
-                  ),
-              ],
-              selected: {_segment},
-              onSelectionChanged: (selection) =>
-                  setState(() => _segment = selection.first),
-              showSelectedIcon: false,
-            ),
-          ),
+          const SizedBox(height: 8),
+          _filterChips(),
+          const SizedBox(height: 8),
           Expanded(
             child: StreamBuilder<List<Deadline>>(
               stream:
@@ -96,10 +88,16 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                     .where((d) => _segmentOf(d, todayStart) == _segment)
                     .toList();
                 if (deadlines.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No ${_segmentLabel(_segment).toLowerCase()} deadlines.',
-                    ),
+                  return EmptyState(
+                    icon: Icons.event_available_outlined,
+                    headline: 'No ${_segmentLabel(_segment).toLowerCase()} deadlines',
+                    body: _segment == _Segment.upcoming
+                        ? 'Deadlines due within the next 7 days will appear here.'
+                        : _segment == _Segment.overdue
+                            ? 'Great news! You have no overdue deadlines.'
+                            : _segment == _Segment.done
+                                ? 'Completed deadlines will be archived here.'
+                                : 'Deadlines due more than a week away will appear here.',
                   );
                 }
                 return FutureBuilder<Map<String, Purchase>>(
@@ -108,10 +106,12 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                     final purchases =
                         purchaseSnapshot.data ?? const <String, Purchase>{};
                     return ListView.separated(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: deadlines.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: 8),
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final deadline = deadlines[index];
                         return _DeadlineTile(
@@ -134,6 +134,27 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
         onPressed: () => context.push('/deadlines/new'),
         icon: const Icon(Icons.add),
         label: const Text('Deadline'),
+      ),
+    );
+  }
+
+  Widget _filterChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _Segment.values.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final segment = _Segment.values[index];
+          final selected = _segment == segment;
+          return KeepitFilterChip(
+            label: _segmentLabel(segment),
+            selected: selected,
+            onSelected: (_) => setState(() => _segment = segment),
+          );
+        },
       ),
     );
   }
@@ -172,37 +193,112 @@ class _DeadlineTile extends StatelessWidget {
       subtitle.write(' · ${repeatLabel(deadline.repeatRule)}');
     }
 
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          deadline.isDone
-              ? Icons.check_circle
-              : isOverdue
-                  ? Icons.warning_amber
-                  : Icons.event_outlined,
-          color: deadline.isDone
-              ? theme.colorScheme.primary
-              : isOverdue
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.onSurfaceVariant,
-        ),
-        title: Text(
-          deadline.title,
-          style: deadline.isDone
-              ? const TextStyle(decoration: TextDecoration.lineThrough)
-              : null,
-        ),
-        subtitle: Text(subtitle.toString()),
-        trailing: isOverdue
-            ? Text(
-                '${-daysLeft}d overdue',
-                style: TextStyle(
-                  color: theme.colorScheme.error,
-                  fontWeight: FontWeight.bold,
+    final Color statusColor;
+    final IconData statusIcon;
+    final String statusBadgeText;
+    final Color statusBadgeBg;
+
+    if (deadline.isDone) {
+      statusColor = AppColors.mintAccent;
+      statusIcon = Icons.check_circle_rounded;
+      statusBadgeText = 'Done';
+      statusBadgeBg = AppColors.mintAccent.withAlpha(24);
+    } else if (isOverdue) {
+      statusColor = AppColors.urgent;
+      statusIcon = Icons.warning_amber_rounded;
+      statusBadgeText = '${-daysLeft}d overdue';
+      statusBadgeBg = AppColors.urgent.withAlpha(24);
+    } else if (daysLeft == 0) {
+      statusColor = AppColors.warning;
+      statusIcon = Icons.today_rounded;
+      statusBadgeText = 'Due today';
+      statusBadgeBg = AppColors.warning.withAlpha(24);
+    } else if (daysLeft == 1) {
+      statusColor = AppColors.warning;
+      statusIcon = Icons.event_rounded;
+      statusBadgeText = 'Due tomorrow';
+      statusBadgeBg = AppColors.warning.withAlpha(24);
+    } else if (daysLeft <= 7) {
+      statusColor = AppColors.mintAccent;
+      statusIcon = Icons.event_outlined;
+      statusBadgeText = 'In ${daysLeft}d';
+      statusBadgeBg = AppColors.mintAccent.withAlpha(24);
+    } else {
+      statusColor = theme.colorScheme.onSurfaceVariant;
+      statusIcon = Icons.calendar_today_outlined;
+      statusBadgeText = DateFormat.MMMd().format(dueDate);
+      statusBadgeBg = theme.colorScheme.surfaceContainerHighest.withAlpha(80);
+    }
+
+    return KeepitCard(
+      onTap: () => context.push('/deadlines/${deadline.id}'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: statusColor.withAlpha(24),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              statusIcon,
+              color: statusColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  deadline.title,
+                  style: deadline.isDone
+                      ? TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        )
+                      : theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-            : null,
-        onTap: () => context.push('/deadlines/${deadline.id}'),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle.toString(),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusBadgeBg,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              statusBadgeText,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

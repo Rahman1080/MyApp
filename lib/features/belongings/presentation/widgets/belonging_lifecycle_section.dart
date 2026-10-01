@@ -116,11 +116,14 @@ class BelongingLifecycleSection extends StatelessWidget {
     );
     if (result == null || !context.mounted) return;
 
-    if (result.acquisitionType != null) {
-      await lifecycleService.recordAcquisition(
-        belongingId: belonging.id,
-        acquisitionType: result.acquisitionType!,
-        acquisitionDate: result.acquisitionDate,
+    await lifecycleService.recordAcquisition(
+      belongingId: belonging.id,
+      acquisitionType: result.acquisitionType,
+      acquisitionDate: result.acquisitionDate,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lifecycle details updated.')),
       );
     }
     onChanged();
@@ -178,6 +181,7 @@ class _LifecycleEditDialog extends StatefulWidget {
 class _LifecycleEditDialogState extends State<_LifecycleEditDialog> {
   String? _acquisitionType;
   DateTime? _acquisitionDate;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -243,16 +247,21 @@ class _LifecycleEditDialogState extends State<_LifecycleEditDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            _LifecycleEditResult(
-              acquisitionType: _acquisitionType,
-              acquisitionDate: _acquisitionDate,
-            ),
-          ),
+          onPressed: _submitting
+              ? null
+              : () {
+                  setState(() => _submitting = true);
+                  Navigator.of(context).pop(
+                    _LifecycleEditResult(
+                      acquisitionType: _acquisitionType,
+                      acquisitionDate: _acquisitionDate,
+                    ),
+                  );
+                },
           child: const Text('Save'),
         ),
       ],

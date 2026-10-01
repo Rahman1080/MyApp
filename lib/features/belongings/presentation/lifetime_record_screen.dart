@@ -22,7 +22,7 @@ class LifetimeRecordScreen extends StatefulWidget {
   });
 
   static String routePathFor(String belongingId) =>
-      '/belongings/$belongingId/lifetime';
+      '/stuff/$belongingId/lifetime';
 
   final ItemLifetimeService lifetimeService;
   final String belongingId;

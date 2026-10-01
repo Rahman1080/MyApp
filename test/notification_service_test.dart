@@ -263,4 +263,45 @@ void main() {
       expect(received, 'warranty:xyz');
     });
   });
+
+  group('NotificationService testing & diagnostics', () {
+    test('showTestNotification dispatches immediate notification with id 999999', () async {
+      await service.showTestNotification();
+      expect(backend.scheduled.containsKey(999999), isTrue);
+      expect(backend.scheduled[999999]!.payload, 'test:immediate');
+    });
+
+    test('scheduleTestReminder schedules reminder with id 999998', () async {
+      await service.scheduleTestReminder(secondsFromNow: 15);
+      expect(backend.scheduled.containsKey(999998), isTrue);
+      expect(backend.scheduled[999998]!.payload, 'test:scheduled');
+    });
+
+    test('pendingNotificationCount reflects backend scheduled notifications', () async {
+      expect(await service.pendingNotificationCount(), 0);
+      await service.showTestNotification();
+      expect(await service.pendingNotificationCount(), 1);
+    });
+
+    test('getNextUpcomingReminder returns next future reminder', () async {
+      expect(await service.getNextUpcomingReminder(now: now), isNull);
+
+      await insertReminder(
+        entityType: 'deadline',
+        entityId: 'd1',
+        remindAt: now.add(const Duration(days: 3)),
+        title: 'Later',
+      );
+      await insertReminder(
+        entityType: 'warranty',
+        entityId: 'w1',
+        remindAt: now.add(const Duration(days: 1)),
+        title: 'Sooner',
+      );
+
+      final next = await service.getNextUpcomingReminder(now: now);
+      expect(next, isNotNull);
+      expect(next!.title, 'Sooner');
+    });
+  });
 }

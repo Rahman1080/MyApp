@@ -203,7 +203,16 @@ class _DeadlineFormScreenState extends State<DeadlineFormScreen> {
             : _notesController.text.trim(),
       );
 
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isEditing ? 'Deadline updated.' : 'Deadline saved.',
+            ),
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

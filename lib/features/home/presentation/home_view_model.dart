@@ -1,17 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/database/keepit_database.dart';
+import '../../../core/database/repositories/belonging_repository.dart';
 import '../../../core/database/repositories/deadline_repository.dart';
 import '../../../core/database/repositories/purchase_repository.dart';
+import '../../../core/database/repositories/refund_repository.dart';
 import '../../../core/database/repositories/return_deadline_repository.dart';
+import '../../../core/database/repositories/service_record_repository.dart';
 import '../../../core/database/repositories/warranty_repository.dart';
 import '../../../shared/services/return_deadline_service.dart';
 import '../../../shared/services/warranty_service.dart';
 
 /// Severity of an attention item, driving its color.
-enum AttentionSeverity { critical, warning }
+enum AttentionSeverity { critical, warning, info }
 
 /// One "needs your attention" row on the home screen.
 class AttentionItem {
@@ -21,6 +25,7 @@ class AttentionItem {
     required this.subtitle,
     required this.severity,
     this.purchaseId,
+    this.routePath,
   });
 
   final IconData icon;
@@ -28,6 +33,7 @@ class AttentionItem {
   final String subtitle;
   final AttentionSeverity severity;
   final String? purchaseId;
+  final String? routePath;
 }
 
 /// A warranty with its computed expiry and the purchase it belongs to.
@@ -53,31 +59,43 @@ class DatedReturn {
 
 /// Aggregates everything the home dashboard shows.
 ///
-/// Listens to the purchase and deadline streams so the dashboard stays fresh
-/// when records change in other tabs; derived data (warranty expiry,
-/// return windows) is recomputed with the Phase 2 pure-Dart services.
+/// Listens to the purchase, deadline and belongings streams so the dashboard
+/// stays fresh when records change in other tabs; derived data (warranty expiry,
+/// return windows, maintenance) is recomputed with pure-Dart services.
 class HomeViewModel extends ChangeNotifier {
   HomeViewModel({
     required PurchaseRepository purchaseRepository,
     required WarrantyRepository warrantyRepository,
     required ReturnDeadlineRepository returnDeadlineRepository,
     required DeadlineRepository deadlineRepository,
+    BelongingRepository? belongingRepository,
+    ServiceRecordRepository? serviceRecordRepository,
+    RefundRepository? refundRepository,
   })  : _purchases = purchaseRepository,
         _warranties = warrantyRepository,
         _returnDeadlines = returnDeadlineRepository,
-        _deadlines = deadlineRepository;
+        _deadlines = deadlineRepository,
+        _belongings = belongingRepository,
+        _serviceRecords = serviceRecordRepository,
+        _refunds = refundRepository;
 
   final PurchaseRepository _purchases;
   final WarrantyRepository _warranties;
   final ReturnDeadlineRepository _returnDeadlines;
   final DeadlineRepository _deadlines;
+  final BelongingRepository? _belongings;
+  final ServiceRecordRepository? _serviceRecords;
+  final RefundRepository? _refunds;
 
   final List<StreamSubscription<Object?>> _subscriptions = [];
 
   bool loading = true;
   int totalPurchases = 0;
+  int totalBelongings = 0;
+  int incompleteBelongings = 0;
   List<Purchase> recentPurchases = [];
   Map<String, Purchase> purchasesById = {};
+  Map<String, Belonging> belongingsById = {};
 
   int activeWarrantyCount = 0;
   List<ExpiringWarranty> expiringWarranties = [];
@@ -87,6 +105,9 @@ class HomeViewModel extends ChangeNotifier {
 
   List<Deadline> overdueDeadlines = [];
   List<Deadline> upcomingDeadlines = [];
+
+  List<ServiceRecord> upcomingMaintenance = [];
+  List<Refund> pendingRefunds = [];
 
   /// Flat list driving the "Needs attention" section, most urgent first.
   List<AttentionItem> get attentionItems {
@@ -99,6 +120,7 @@ class HomeViewModel extends ChangeNotifier {
               '${-returnDaysLeft(r.deadline.deadlineDate, DateTime.now())} days past the return date',
           severity: AttentionSeverity.critical,
           purchaseId: r.deadline.purchaseId,
+          routePath: '/purchases/${r.deadline.purchaseId}',
         ),
       for (final d in overdueDeadlines)
         AttentionItem(
@@ -106,6 +128,7 @@ class HomeViewModel extends ChangeNotifier {
           title: d.title,
           subtitle: 'Was due ${_relativeDay(d.dueDate)}',
           severity: AttentionSeverity.critical,
+          routePath: '/deadlines/${d.id}',
         ),
       for (final r in approachingReturns)
         AttentionItem(
@@ -115,6 +138,7 @@ class HomeViewModel extends ChangeNotifier {
               '${returnDaysLeft(r.deadline.deadlineDate, DateTime.now())} days left to return',
           severity: AttentionSeverity.warning,
           purchaseId: r.deadline.purchaseId,
+          routePath: '/purchases/${r.deadline.purchaseId}',
         ),
       for (final w in expiringWarranties)
         AttentionItem(
@@ -124,6 +148,36 @@ class HomeViewModel extends ChangeNotifier {
               '${warrantyDaysRemaining(w.expiry, DateTime.now())} days of coverage left',
           severity: AttentionSeverity.warning,
           purchaseId: w.warranty.purchaseId,
+          routePath: '/purchases/${w.warranty.purchaseId}',
+        ),
+      for (final m in upcomingMaintenance)
+        AttentionItem(
+          icon: Icons.build_outlined,
+          title: 'Maintenance due: ${m.serviceType}',
+          subtitle: m.nextServiceDate != null
+              ? 'Scheduled for ${DateFormat.yMMMd().format(m.nextServiceDate!)}'
+              : 'Service due soon',
+          severity: AttentionSeverity.warning,
+          routePath: '/stuff/${m.belongingId}',
+        ),
+      for (final ref in pendingRefunds)
+        AttentionItem(
+          icon: Icons.currency_exchange_outlined,
+          title: 'Pending refund: ${purchasesById[ref.purchaseId]?.productName ?? "Purchase"}',
+          subtitle: ref.amountCents != null
+              ? '\$${(ref.amountCents! / 100).toStringAsFixed(2)} waiting for refund'
+              : 'Status: ${ref.status}',
+          severity: AttentionSeverity.warning,
+          purchaseId: ref.purchaseId,
+          routePath: '/purchases/${ref.purchaseId}',
+        ),
+      if (incompleteBelongings > 0)
+        AttentionItem(
+          icon: Icons.help_outline,
+          title: '$incompleteBelongings item(s) without location',
+          subtitle: 'Tap to organize your belongings',
+          severity: AttentionSeverity.info,
+          routePath: '/organize',
         ),
     ];
     return items;
@@ -132,7 +186,9 @@ class HomeViewModel extends ChangeNotifier {
   int get attentionCount => attentionItems.length;
 
   int get dueThisWeekCount =>
-      approachingReturns.length + upcomingDeadlines.length;
+      approachingReturns.length +
+      upcomingDeadlines.length +
+      upcomingMaintenance.length;
 
   Future<void> init() async {
     await _refresh();
@@ -143,6 +199,8 @@ class HomeViewModel extends ChangeNotifier {
       _deadlines.watchUpcoming().skip(1).listen((_) => _refresh()),
       _warranties.watchAll().skip(1).listen((_) => _refresh()),
       _returnDeadlines.watchAll().skip(1).listen((_) => _refresh()),
+      if (_belongings != null)
+        _belongings.watchAll().skip(1).listen((_) => _refresh()),
     ]);
   }
 
@@ -170,6 +228,24 @@ class HomeViewModel extends ChangeNotifier {
     totalPurchases = purchases.length;
     recentPurchases = purchases.take(5).toList();
     purchasesById = {for (final p in purchases) p.id: p};
+
+    if (_belongings != null) {
+      final belongings = await _belongings.getAll();
+      totalBelongings = belongings.length;
+      incompleteBelongings = belongings.where((b) => b.locationId == null).length;
+      belongingsById = {for (final b in belongings) b.id: b};
+    }
+
+    if (_serviceRecords != null) {
+      upcomingMaintenance = await _serviceRecords.upcoming(asOf: now);
+    }
+
+    if (_refunds != null) {
+      final allRefunds = await _refunds.getAll();
+      pendingRefunds = allRefunds
+          .where((r) => r.status == 'requested' || r.status == 'pending')
+          .toList();
+    }
 
     final warranties = await _warranties.getAll();
     activeWarrantyCount = 0;

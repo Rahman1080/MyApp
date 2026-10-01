@@ -51,6 +51,21 @@ class FakeNotificationBackend implements NotificationBackend {
   }
 
   @override
+  Future<void> show({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    scheduled[id] = FakeScheduledNotification(
+      title: title,
+      body: body,
+      when: tz.TZDateTime.now(tz.local),
+      payload: payload,
+    );
+  }
+
+  @override
   Future<void> cancel(int id) async {
     scheduled.remove(id);
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../database/keepit_database.dart';
 import '../database/repositories/reminder_repository.dart';
 import '../permissions/permission_service.dart';
 import 'notification_backend.dart';
@@ -93,6 +94,7 @@ class NotificationService {
   /// - cancels OS notifications that have no matching pending reminder
   ///   (e.g. deleted rows, database restore, manual clear).
   Future<ReminderSyncReport> syncReminders({DateTime? now}) async {
+    await ensureInitialized();
     final current = now ?? DateTime.now();
     final pending = await _reminders.getPending();
 
@@ -141,8 +143,72 @@ class NotificationService {
   /// reminders master switch in Settings; the reminder rows in the database
   /// are left untouched so re-enabling re-syncs them.
   Future<void> cancelAllNotifications() async {
+    await ensureInitialized();
     for (final id in await _backend.pendingIds()) {
       await _backend.cancel(id);
     }
+  }
+
+  /// Displays an immediate notification. Used for testing and instant alerts.
+  Future<void> showImmediate({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    await ensureInitialized();
+    await _backend.show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+    );
+  }
+
+  /// Posts an immediate test notification to verify OS notification delivery.
+  Future<void> showTestNotification() async {
+    await showImmediate(
+      id: 999999,
+      title: 'KeepIt Reminders',
+      body: 'Notifications are working properly on your device!',
+      payload: 'test:immediate',
+    );
+  }
+
+  /// Schedules a test reminder for [secondsFromNow] seconds in the future (default 10s).
+  Future<void> scheduleTestReminder({int secondsFromNow = 10}) async {
+    await ensureInitialized();
+    final fireTime = DateTime.now().add(Duration(seconds: secondsFromNow));
+    await _backend.schedule(
+      id: 999998,
+      title: 'KeepIt Scheduled Reminder',
+      body: 'Scheduled background reminder test successful!',
+      when: tz.TZDateTime.from(fireTime, tz.local),
+      payload: 'test:scheduled',
+    );
+  }
+
+  /// Returns the IDs of all notifications currently scheduled with the OS.
+  Future<Set<int>> pendingNotificationIds() async {
+    await ensureInitialized();
+    return _backend.pendingIds();
+  }
+
+  /// Returns the count of all notifications currently scheduled with the OS.
+  Future<int> pendingNotificationCount() async {
+    final ids = await pendingNotificationIds();
+    return ids.length;
+  }
+
+  /// Returns the next pending reminder row from the database (if any) that is scheduled in the future.
+  Future<Reminder?> getNextUpcomingReminder({DateTime? now}) async {
+    final current = now ?? DateTime.now();
+    final pending = await _reminders.getPending();
+    for (final reminder in pending) {
+      if (reminder.remindAt.isAfter(current)) {
+        return reminder;
+      }
+    }
+    return null;
   }
 }

@@ -283,7 +283,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
                       ? null
                       : Text(belonging.brand!),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/belongings/${belonging.id}'),
+                  onTap: () => context.push('/stuff/${belonging.id}'),
                 ),
           ],
         ),
@@ -553,7 +553,14 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       reminderCoordinator: widget.reminderCoordinator,
       notificationService: widget.notificationService,
     );
-    if (saved == true) _refresh();
+    if (saved == true) {
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Return window updated.')),
+        );
+      }
+    }
   }
 
   Future<void> _markReturned(_DetailData data) async {
@@ -656,7 +663,14 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       refundRepository: widget.refundRepository,
       purchaseRepository: widget.purchaseRepository,
     );
-    if (saved == true) _refresh();
+    if (saved == true) {
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Refund saved.')),
+        );
+      }
+    }
   }
 
   Widget _row(ThemeData theme, String label, String value,

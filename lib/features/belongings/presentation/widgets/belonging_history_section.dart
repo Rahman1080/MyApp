@@ -90,7 +90,12 @@ class _BelongingHistorySectionState extends State<BelongingHistorySection> {
       eventType: result.eventType,
       title: result.text,
     );
-    if (mounted) setState(() {});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('History entry added.')),
+      );
+      setState(() {});
+    }
   }
 
   @override

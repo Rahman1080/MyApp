@@ -7,8 +7,12 @@ import 'package:intl/intl.dart';
 import '../../../core/database/keepit_database.dart';
 import '../../../core/database/repositories/location_repository.dart';
 import '../../../core/database/repositories/place_repository.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/services/global_search.dart';
 import '../../../shared/services/location_service.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/keepit_card.dart';
+import '../../../shared/widgets/keepit_search_bar.dart';
 import '../../belongings/presentation/widgets/location_path.dart';
 
 /// "Where is it?" — one search field across purchases, receipts, belongings,
@@ -108,31 +112,12 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Search everything…',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _controller.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          _controller.clear();
-                          _onQueryChanged('');
-                          setState(() {});
-                        },
-                      ),
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: _onQueryChanged,
-              onSubmitted: _runSearch,
-              textInputAction: TextInputAction.search,
-            ),
+          KeepitSearchBar(
+            controller: _controller,
+            autofocus: true,
+            hintText: 'Search items, receipts, places...',
+            onChanged: _onQueryChanged,
+            onSubmitted: _runSearch,
           ),
           if (_searching)
             const LinearProgressIndicator(minHeight: 2),
@@ -140,14 +125,11 @@ class _SearchScreenState extends State<SearchScreen> {
             child: results == null
                 ? _EmptyHint(hasSearched: _hasSearched)
                 : results.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            'Nothing found for “${_controller.text.trim()}”.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                    ? EmptyState(
+                        icon: Icons.search_off_outlined,
+                        headline: 'No results found',
+                        body:
+                            'Nothing matched "${_controller.text.trim()}". Try searching with fewer characters or a broader term.',
                       )
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -276,37 +258,13 @@ class _EmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.manage_search_outlined,
-              size: 64,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              hasSearched
-                  ? 'Type to search again.'
-                  : 'Where did you put it?',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Try “passport”, “warranty”, “kitchen”…\n'
+    return EmptyState(
+      icon: Icons.manage_search_outlined,
+      headline: hasSearched ? 'Search again' : 'Where did you put it?',
+      body: hasSearched
+          ? 'Type a query to search across purchases, belongings, receipts, and locations.'
+          : 'Try "passport", "warranty", "kitchen", or a product brand name.\n'
               'Belongings show where they are kept, right in the results.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -333,37 +291,107 @@ class _Section<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 12, bottom: 4),
-          child: Text(
-            '$title (${items.length})',
-            style: Theme.of(context).textTheme.titleSmall,
+          padding: const EdgeInsets.only(top: 14, bottom: 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.mintAccent.withAlpha(24),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${items.length}',
+                  style: const TextStyle(
+                    color: AppColors.mintAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         for (final item in items)
-          Card(
-            child: ListTile(
-              leading: Icon(icon),
-              title: Text(titleOf(item)),
-              subtitle: subtitleOf == null
-                  ? null
-                  : () {
-                      final s = subtitleOf!(item);
-                      return s == null ? null : Text(s);
-                    }(),
-              trailing: trailing == null
-                  ? null
-                  : SizedBox(
-                      width: 140,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: trailing!(item),
-                      ),
-                    ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: KeepitCard(
               onTap: () => onTap(item),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.mintAccent.withAlpha(20),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: AppColors.mintAccent,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          titleOf(item),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subtitleOf != null) ...[
+                          Builder(
+                            builder: (context) {
+                              final sub = subtitleOf!(item);
+                              if (sub == null || sub.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  sub,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    trailing!(item) ?? const SizedBox.shrink(),
+                  ],
+                ],
+              ),
             ),
           ),
       ],

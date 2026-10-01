@@ -40,10 +40,12 @@ class LifecycleService {
   /// Records how and when the item entered the user's life.
   Future<void> recordAcquisition({
     required String belongingId,
-    required String acquisitionType,
+    String? acquisitionType,
     DateTime? acquisitionDate,
   }) async {
-    assert(BelongingAcquisitionType.all.contains(acquisitionType));
+    if (acquisitionType != null) {
+      assert(BelongingAcquisitionType.all.contains(acquisitionType));
+    }
     await _belongings.update(
       belongingId,
       BelongingsCompanion(
@@ -51,11 +53,13 @@ class LifecycleService {
         acquisitionDate: Value(acquisitionDate),
       ),
     );
+    final typeLabel = acquisitionType != null
+        ? BelongingAcquisitionType.labelOf(acquisitionType).toLowerCase()
+        : 'details updated';
     await _history.log(
       belongingId: belongingId,
       eventType: BelongingHistoryEvent.note,
-      title:
-          'Acquired (${BelongingAcquisitionType.labelOf(acquisitionType).toLowerCase()})',
+      title: 'Acquired ($typeLabel)',
       details: acquisitionDate != null
           ? 'Acquired on ${_formatDate(acquisitionDate)}'
           : null,
